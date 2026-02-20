@@ -1,0 +1,47 @@
+# Build trees
+/build/
+/sim/bin/
+/sim/obj/
+/out/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.VC.db
+*.VC.VC.opendb
+*.opendb
+*.ipch
+
+# MSVC intermediates/binaries
+*.obj
+*.pch
+*.pdb
+*.idb
+*.ilk
+*.exp
+*.lib
+*.tlog
+*.lastbuildstate
+*.recipe
+*.exe
+*.dll
+
+# Generated plugin bundles
+*.vst3/
+
+# Logs and temporary files
+*.log
+*.tmp
+_tmp*
+
+# Generated simulator audio output
+/sim/**/out.wav
