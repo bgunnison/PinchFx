@@ -37,6 +37,7 @@ public:
 
     void processBlock(const float* in, float* out, int numChannels, int numSamples) {
         static constexpr double kPi = 3.14159265358979323846;
+        static constexpr double kWetMakeup = 3.0; // Compensate lower wet-path level so WET/DRY balance is usable.
         const double mix = std::clamp(params_.mix, 0.0, 1.0);
         const double mixShaped = std::sqrt(mix); // Match plugin mix taper: more audible wet around mid knob.
         const double dryMix = std::cos(0.5 * kPi * mixShaped);
@@ -56,8 +57,9 @@ public:
             lastTone_ = algOut.xtone;
             lastTube_ = algOut.xtube;
             lastLimiter_ = algOut.xlim;
-            const double outL = dryMix * inL + wetMix * algOut.xlim;
-            const double outR = dryMix * inR + wetMix * algOut.xlim;
+            const double wet = kWetMakeup * algOut.xlim;
+            const double outL = dryMix * inL + wetMix * wet;
+            const double outR = dryMix * inR + wetMix * wet;
 
             out[base] = static_cast<float>(outL);
             if (numChannels > 1) out[base + 1] = static_cast<float>(outR);

@@ -23,25 +23,25 @@ public:
     struct Params {
         static constexpr double DEFAULT_TRIG = 0.0; // Manual trigger off.
         static constexpr double DEFAULT_POSITION = 0.5; // Middle harmonic selection.
-        static constexpr double DEFAULT_LOCK = 0.5; // Mid Q and tracking tightness.
-        static constexpr double DEFAULT_GLIDE = 0.25; // Legacy state slot (unused).
-        static constexpr double DEFAULT_TONE = 0.5; // Balanced brightness.
+        static constexpr double DEFAULT_LOCK = 0.1111111111111111; // Q default = 1.0 with current 0.5..5.0 mapping.
+        static constexpr double DEFAULT_GLIDE = 0.25; // Tracker time-constant control.
+        static constexpr double DEFAULT_TONE = 1.0; // Default fully open tone.
         static constexpr double DEFAULT_MIX = 0.35; // Preserve dry signal.
         static constexpr double DEFAULT_MONITOR = 0.0; // Monitor off.
         static constexpr double DEFAULT_MODE = 0.0; // Legacy state slot (unused).
         static constexpr double DEFAULT_HEAT = 0.0; // No added drive.
-        static constexpr double DEFAULT_SENS = 0.5; // Legacy state slot (unused).
+        static constexpr double DEFAULT_SENS = 0.5; // AGC drive trim neutral point.
 
         double trig{DEFAULT_TRIG};
         double position{DEFAULT_POSITION};
         double lock{DEFAULT_LOCK};
-        double glide{DEFAULT_GLIDE}; // Legacy state slot (unused).
+        double glide{DEFAULT_GLIDE}; // Tracker response time.
         double tone{DEFAULT_TONE};
         double mix{DEFAULT_MIX};
         double monitor{DEFAULT_MONITOR};
         double mode{DEFAULT_MODE}; // Legacy state slot (unused).
         double heat{DEFAULT_HEAT};
-        double sens{DEFAULT_SENS}; // Legacy state slot (unused).
+        double sens{DEFAULT_SENS}; // AGC drive trim control (0.5 = unity).
     };
 
     struct SampleOut {
@@ -121,8 +121,9 @@ public:
         pitchTracker_.processSample(monoIn);
         const double conf = pitchTracker_.lastConfidence();
         const double fHat = pitchTracker_.lastFrequency();
-        const bool hasEstimate = std::isfinite(fHat) && (fHat > MIN_VALID_F0_HZ);
-        const double fCtrl = pitchControl_.update(fHat, conf, hasEstimate);
+        const bool estimateInRange = std::isfinite(fHat) && (fHat >= MIN_PITCH_HZ) && (fHat <= MAX_PITCH_HZ);
+        const bool trackerCanUpdate = estimateInRange && (conf >= MIN_CONFIDENCE_TRACK_UPDATE);
+        const double fCtrl = pitchControl_.update(fHat, conf, trackerCanUpdate);
         f0Smoothed_ = std::clamp(fCtrl, MIN_PITCH_HZ, MAX_PITCH_HZ);
         const double fh = static_cast<double>(partial_) * f0Smoothed_;
         double fhFinal = std::clamp(fh, MIN_HARMONIC_HZ, MAX_HARMONIC_NYQUIST * sampleRate_);
@@ -135,7 +136,7 @@ public:
         const double desiredGain = std::clamp(AGC_TARGET_LEVEL / std::max(agcDetector_, AGC_INPUT_FLOOR), AGC_MIN_GAIN, AGC_MAX_GAIN);
         const double agcGainCoeff = (desiredGain > agcGain_) ? agcGainAttackCoeff_ : agcGainReleaseCoeff_;
         agcGain_ += agcGainCoeff * (desiredGain - agcGain_);
-        const double resonatorIn = std::clamp(monoIn * agcGain_ * AGC_DRIVE, -AGC_DRIVE_CLIP, AGC_DRIVE_CLIP);
+        const double resonatorIn = std::clamp(monoIn * agcGain_ * AGC_DRIVE * agcDriveTrim_, -AGC_DRIVE_CLIP, AGC_DRIVE_CLIP);
         out.agc = resonatorIn;
 
         const double xbpRaw = resonator_.process(resonatorIn);
@@ -146,8 +147,8 @@ public:
         out.fh = fhFinal;
         out.conf = conf;
         const double pitchRef = std::max(f0Smoothed_, MIN_VALID_F0_HZ);
-        const double pitchError = hasEstimate ? std::abs(fHat - f0Smoothed_) / pitchRef : 1.0;
-        const bool pitchGate = hasEstimate && (conf >= MIN_CONFIDENCE_GATE) && (pitchError <= PITCH_ERROR_RATIO_GATE);
+        const double pitchError = estimateInRange ? std::abs(fHat - f0Smoothed_) / pitchRef : 1.0;
+        const bool pitchGate = estimateInRange && (conf >= MIN_CONFIDENCE_GATE) && (pitchError <= PITCH_ERROR_RATIO_GATE);
         out.gate = pitchGate ? 1.0 : 0.0;
         out.pitchGate = out.gate;
         out.xr = RESONATOR_OUTPUT_GAIN * out.xbp;
@@ -184,18 +185,21 @@ private:
     static constexpr double RESONATOR_TRIM = 0.25; // Output trim after Q normalization.
     static constexpr double MIN_Q_NORM = 1.0; // Avoid divide-by-zero when normalizing.
     static constexpr double RESONATOR_OUTPUT_GAIN = 0.7; // Fixed output gain now that SQUEAL control is removed.
-    static constexpr double PITCH_CTRL_TAU_SLOW_SEC = 0.20; // Slow f0 response when confidence is weak.
-    static constexpr double PITCH_CTRL_TAU_FAST_SEC = 0.01; // Fast f0 response when confidence is strong.
+    static constexpr double PITCH_CTRL_TAU_SLOW_SEC = 0.20; // Base slow f0 response when confidence is weak.
+    static constexpr double PITCH_CTRL_TAU_FAST_SEC = 0.01; // Base fast f0 response when confidence is strong.
     static constexpr double PITCH_CTRL_MAX_CENTS_PER_SEC = 1800.0; // Limits abrupt octave jumps.
+    static constexpr double TRACKER_TC_SCALE_MIN = 0.4; // Fastest tracker setting.
+    static constexpr double TRACKER_TC_SCALE_RANGE = 2.6; // Slowest setting is 3x base tau.
+    static constexpr double MIN_CONFIDENCE_TRACK_UPDATE = 0.25; // Freeze F0 below this confidence.
     static constexpr double Q_MIN = 0.5; // Minimum resonator Q.
     static constexpr double Q_RANGE = 4.5; // Q range up to 5.0.
     static constexpr double TONE_CUTOFF_MIN = 250.0; // Darker minimum so tone control has clear effect.
-    static constexpr double TONE_CUTOFF_RANGE = 9750.0; // Sweep up to ~10 kHz.
+    static constexpr double TONE_CUTOFF_RANGE = 11750.0; // Sweep up to 12 kHz.
     static constexpr double TUBE_DRIVE_BASE = 1.0; // Neutral drive at heat=0.
     static constexpr double TUBE_DRIVE_RANGE = 7.0; // Heat adds up to 8x.
     static constexpr double TUBE_BIAS_BASE = 0.18; // Slight asymmetry for bite.
     static constexpr double TUBE_BIAS_RANGE = 0.16; // Tone reduces asymmetry.
-    static constexpr double POSITION_SCALE = 4.0; // Map 0..1 position to 5 discrete harmonics.
+    static constexpr double POSITION_SCALE = 5.0; // Map 0..1 position to 6 discrete harmonics.
     static constexpr double MIN_CONFIDENCE_GATE = 0.2; // Gate trace threshold for "pitch is trustworthy".
     static constexpr double PITCH_ERROR_RATIO_GATE = 0.08; // Gate trace tolerance for estimate deviation.
     static constexpr double AGC_TARGET_LEVEL = 0.2; // Target absolute level driving resonator.
@@ -208,32 +212,40 @@ private:
     static constexpr double AGC_GAIN_RELEASE_MS = 5.0; // Fast trim when input jumps.
     static constexpr double AGC_DRIVE = 1.0; // Resonator drive scalar.
     static constexpr double AGC_DRIVE_CLIP = 2.0; // Clip drive to keep resonator bounded.
+    static constexpr double AGC_DRIVE_TRIM_DB_RANGE = 40.0; // sens maps to -20..+20 dB around unity.
     static constexpr double DEFAULT_Q_VALUE = Q_MIN + Q_RANGE * Params::DEFAULT_LOCK; // Derived default Q.
     static constexpr double DEFAULT_TONE_CUTOFF = TONE_CUTOFF_MIN + TONE_CUTOFF_RANGE * Params::DEFAULT_TONE; // Derived default tone cutoff.
     static constexpr double DEFAULT_TUBE_DRIVE = TUBE_DRIVE_BASE + TUBE_DRIVE_RANGE * Params::DEFAULT_HEAT; // Derived default drive.
     static constexpr double DEFAULT_TUBE_BIAS = TUBE_BIAS_BASE - TUBE_BIAS_RANGE * Params::DEFAULT_TONE; // Derived default bias.
+    static constexpr double DEFAULT_AGC_DRIVE_TRIM = 1.0; // sens default (0.5) keeps AGC drive unchanged.
 
     void updateDerived() {
         const double lock = params_.lock;
         const double tone = params_.tone;
         const double heat = params_.heat;
-        const double glide = params_.glide;
-        (void)glide; // Legacy parameter kept for state compatibility; not used in DSP path.
+        const double sens = std::clamp(params_.sens, 0.0, 1.0);
+        const double glide = std::clamp(params_.glide, 0.0, 1.0);
+        const double trackerScale = TRACKER_TC_SCALE_MIN + TRACKER_TC_SCALE_RANGE * glide;
+        const double trackerTauSlow = PITCH_CTRL_TAU_SLOW_SEC * trackerScale;
+        const double trackerTauFast = PITCH_CTRL_TAU_FAST_SEC * trackerScale;
+        const double driveTrimDb = (sens - 0.5) * AGC_DRIVE_TRIM_DB_RANGE;
 
         qValue_ = Q_MIN + Q_RANGE * lock;
         toneCutoff_ = TONE_CUTOFF_MIN + TONE_CUTOFF_RANGE * tone;
         tubeDrive_ = TUBE_DRIVE_BASE + TUBE_DRIVE_RANGE * heat;
         tubeBias_ = TUBE_BIAS_BASE - TUBE_BIAS_RANGE * tone;
+        agcDriveTrim_ = std::pow(10.0, driveTrimDb / 20.0);
 
-        static constexpr std::array<int, 5> PARTIALS{5, 7, 9, 12, 15}; // Odd/near-odd harmonics for pinch tone.
+        static constexpr std::array<int, 6> PARTIALS{2, 5, 7, 9, 12, 15}; // Include octave partial plus pinch-focused upper partials.
         const int posIndex = static_cast<int>(std::round(std::clamp(params_.position, 0.0, 1.0) * POSITION_SCALE));
-        partial_ = PARTIALS[static_cast<size_t>(std::clamp(posIndex, 0, 4))];
+        partial_ = PARTIALS[static_cast<size_t>(std::clamp(posIndex, 0, 5))];
 
         toneLP_.setCutoff(toneCutoff_);
         toneLP2_.setCutoff(toneCutoff_);
         toneLP3_.setCutoff(toneCutoff_);
         toneLP4_.setCutoff(toneCutoff_);
         resonator_.setQ(qValue_);
+        pitchControl_.setTimeConstants(trackerTauSlow, trackerTauFast);
         tubeStage_.setDrive(tubeDrive_);
         tubeStage_.setBias(tubeBias_);
     }
@@ -278,6 +290,7 @@ private:
     double toneCutoff_{DEFAULT_TONE_CUTOFF};
     double tubeDrive_{DEFAULT_TUBE_DRIVE};
     double tubeBias_{DEFAULT_TUBE_BIAS};
+    double agcDriveTrim_{DEFAULT_AGC_DRIVE_TRIM};
 };
 
 } // namespace pinchfx::dsp

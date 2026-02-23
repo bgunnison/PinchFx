@@ -20,6 +20,7 @@ using namespace Steinberg::Vst;
 namespace {
 
 constexpr double kPi = 3.14159265358979323846;
+constexpr double kWetMakeup = 1.8; // Compensate lower wet-path level so WET/DRY balance is usable.
 
 void writeOutputSilence(ProcessData& data) {
     for (int32 bus = 0; bus < data.numOutputs; ++bus) {
@@ -100,7 +101,7 @@ void PinchFxProcessor::buildParamOrder() {
     paramOrder_.push_back(kParamPosition);
     paramOrder_.push_back(kParamSqueal); // Hidden legacy slot for state compatibility.
     paramOrder_.push_back(kParamLock);
-    paramOrder_.push_back(kParamGlide); // Hidden legacy slot for state compatibility.
+    paramOrder_.push_back(kParamGlide); // Tracker time-constant control.
     paramOrder_.push_back(kParamTone);
     paramOrder_.push_back(kParamMix);
     paramOrder_.push_back(kParamMonitor);
@@ -119,9 +120,9 @@ ParamValue PinchFxProcessor::defaultNormalized(ParamID pid) const {
         case kParamTrig: return 0.0;
         case kParamPosition: return 0.5;
         case kParamSqueal: return 0.5;
-        case kParamLock: return 0.5;
+        case kParamLock: return 0.1111111111111111;
         case kParamGlide: return 0.25;
-        case kParamTone: return 0.5;
+        case kParamTone: return 1.0;
         case kParamMix: return 0.35;
         case kParamMonitor: return 0.0;
         case kParamMode: return 0.0;
@@ -179,13 +180,13 @@ void PinchFxProcessor::applyNormalizedParam(ParamID pid, ParamValue value) {
         case kParamPosition: params_.position = value; break;
         case kParamSqueal: break; // Legacy no-op.
         case kParamLock: params_.lock = value; break;
-        case kParamGlide: break; // Legacy no-op.
+        case kParamGlide: params_.glide = value; break;
         case kParamTone: params_.tone = value; break;
         case kParamMix: params_.mix = value; break;
         case kParamMonitor: params_.monitor = value; break;
         case kParamMode: break; // Legacy no-op.
         case kParamHeat: params_.heat = value; break;
-        case kParamSens: break; // Legacy no-op.
+        case kParamSens: params_.sens = value; break;
         default: break;
     }
 }
@@ -264,8 +265,9 @@ void PinchFxProcessor::processAudio(ProcessData& data, SampleType** in, SampleTy
         double outL = 0.0;
         double outR = 0.0;
         if (monitor == 0) {
-            outL = dryMix * inL + wetMix * algOut.xlim;
-            outR = dryMix * inR + wetMix * algOut.xlim;
+            const double wet = kWetMakeup * algOut.xlim;
+            outL = dryMix * inL + wetMix * wet;
+            outR = dryMix * inR + wetMix * wet;
         } else {
             double tap = 0.0;
             switch (monitor) {

@@ -3,6 +3,9 @@
 #include "SimIO.h"
 #include "PinchFxSimProcessor.h"
 
+//#define SAMPLEWAV "C:\\projects\\ableplugs\\pinchfx\\sim\\pluck.wav"
+//#define SAMPLE_WAV "C:\\projects\\ableplugs\\pinchfx\\sim\\cleanchords.wav"
+#define SAMPLE_WAV "C:\\projects\\ableplugs\\pinchfx\\sim\\elecnotesup.wav"
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -28,11 +31,12 @@ namespace {
 struct SharedParams {
     std::atomic<float> inputGain{0.5f};
     std::atomic<float> position{0.5f};
-    std::atomic<float> lock{0.5f};
-    std::atomic<float> tone{0.5f};
+    std::atomic<float> lock{0.1111111111111111f};
+    std::atomic<float> glide{0.25f};
+    std::atomic<float> tone{1.0f};
     std::atomic<float> mix{0.35f};
     std::atomic<float> heat{0.0f};
-    std::atomic<bool> enabled{true};
+    std::atomic<bool> mute{false};
     std::atomic<float> scopeTime{0.5f}; // 0..1 mapped to 0.25x..4x
     std::atomic<float> scopeLevel{0.5f}; // 0..1 mapped to 0.25x..4x
 };
@@ -41,6 +45,7 @@ enum class ScopeTap : int {
     Input = 0,
     Agc,
     F0,
+    ResonatorFreq,
     Resonator,
     Tone,
     Tube,
@@ -67,6 +72,7 @@ constexpr int kScopeTopBar = 64;
 
 constexpr int kIdPosition = 1001;
 constexpr int kIdLock = 1003;
+constexpr int kIdTrack = 1004;
 constexpr int kIdTone = 1005;
 constexpr int kIdMix = 1006;
 constexpr int kIdHeat = 1008;
@@ -77,18 +83,20 @@ constexpr int kIdScopeTime = 1015;
 constexpr int kIdScopeFreeze = 1016;
 constexpr int kIdScopeLevel = 1017;
 
-constexpr float kResDefault = 0.5f;
+constexpr float kResDefault = 0.1111111111111111f;
 constexpr float kQMin = 0.5f;
 constexpr float kQMax = 5.0f;
 constexpr float kQRange = kQMax - kQMin;
+constexpr float kInputGainBoost = 10.0f;
 
 constexpr SliderSpec kSliders[] = {
-    {"VOLUME", kIdInputGain, kTopMargin + 0 * kRowHeight, 0, 1000, 0.5f},
-    {"POSITION", kIdPosition, kTopMargin + 1 * kRowHeight, 0, 1000, 0.5f},
+    {"INPUT", kIdInputGain, kTopMargin + 0 * kRowHeight, 0, 1000, 0.5f},
+    {"PARTIAL", kIdPosition, kTopMargin + 1 * kRowHeight, 0, 1000, 0.5f},
     {"RES", kIdLock, kTopMargin + 2 * kRowHeight, 0, 1000, kResDefault},
-    {"TONE", kIdTone, kTopMargin + 3 * kRowHeight, 0, 1000, 0.5f},
-    {"MIX", kIdMix, kTopMargin + 4 * kRowHeight, 0, 1000, 0.35f},
-    {"HEAT", kIdHeat, kTopMargin + 5 * kRowHeight, 0, 1000, 0.0f},
+    {"TRACK", kIdTrack, kTopMargin + 3 * kRowHeight, 0, 1000, 0.25f},
+    {"HEAT", kIdHeat, kTopMargin + 4 * kRowHeight, 0, 1000, 0.0f},
+    {"TONE", kIdTone, kTopMargin + 5 * kRowHeight, 0, 1000, 1.0f},
+    {"WET/DRY", kIdMix, kTopMargin + 6 * kRowHeight, 0, 1000, 0.35f},
 };
 
 struct ScopeBuffer {
@@ -118,6 +126,8 @@ HWND gScopeFreezeButton = nullptr;
 HWND gScopeLevelSlider = nullptr;
 HWND gLockSlider = nullptr;
 HWND gResLabel = nullptr;
+HWND gTrackLabel = nullptr;
+HWND gPositionLabel = nullptr;
 std::atomic<bool> gScopeFrozen{false};
 std::atomic<float> gPitchF0{0.0f};
 std::atomic<float> gPitchFh{0.0f};
@@ -145,16 +155,43 @@ void updateResLabel(float resValue) {
     SetWindowText(gResLabel, text);
 }
 
+void updateTrackLabel() {
+    if (!gTrackLabel) return;
+    const float resonatorHz = gPitchFh.load();
+    char text[48]{};
+    if (std::isfinite(resonatorHz) && resonatorHz > 0.0f) {
+        std::snprintf(text, sizeof(text), "TRACK: %.0f", resonatorHz);
+    } else {
+        std::snprintf(text, sizeof(text), "TRACK: --");
+    }
+    SetWindowText(gTrackLabel, text);
+}
+
+void updatePositionLabel(float positionValue) {
+    if (!gPositionLabel) return;
+    static constexpr int kPartials[6] = {2, 5, 7, 9, 12, 15};
+    const float clamped = std::min(1.0f, std::max(0.0f, positionValue));
+    const int index = static_cast<int>(std::round(clamped * 5.0f));
+    const int partial = kPartials[std::clamp(index, 0, 5)];
+    char text[48]{};
+    std::snprintf(text, sizeof(text), "PARTIAL: %d", partial);
+    SetWindowText(gPositionLabel, text);
+}
+
 void updateParamsFromSlider(int id, int pos) {
     const float norm = sliderPosToNorm(pos);
     switch (id) {
         case kIdInputGain: gParams.inputGain.store(norm); break;
-        case kIdPosition: gParams.position.store(norm); break;
+        case kIdPosition:
+            gParams.position.store(norm);
+            updatePositionLabel(norm);
+            break;
         case kIdLock: {
             gParams.lock.store(norm);
             updateResLabel(norm);
             break;
         }
+        case kIdTrack: gParams.glide.store(norm); break;
         case kIdTone: gParams.tone.store(norm); break;
         case kIdMix: gParams.mix.store(norm); break;
         case kIdHeat: gParams.heat.store(norm); break;
@@ -169,6 +206,7 @@ const char* scopeTapLabel(ScopeTap tap) {
         case ScopeTap::Input: return "Input";
         case ScopeTap::Agc: return "AGC";
         case ScopeTap::F0: return "F0 Hz";
+        case ScopeTap::ResonatorFreq: return "Res Freq";
         case ScopeTap::Resonator: return "Resonator";
         case ScopeTap::Tone: return "Tone";
         case ScopeTap::Tube: return "Tube";
@@ -228,15 +266,13 @@ void fillBuffer(std::vector<int16_t>& buffer, PinchFxSimProcessor& processor, in
     PinchFxSimProcessor::Params params{};
     params.position = gParams.position.load();
     params.lock = gParams.lock.load();
+    params.glide = gParams.glide.load();
     params.tone = gParams.tone.load();
     params.mix = gParams.mix.load();
     params.heat = gParams.heat.load();
-    const bool enabled = gParams.enabled.load();
+    params.sens = gParams.inputGain.load(); // INPUT also drives AGC excitation trim in shared DSP.
+    const bool mute = gParams.mute.load();
     processor.setParams(params);
-    if (!enabled) {
-        params.mix = 0.0;
-        processor.setParams(params);
-    }
 
     const int totalFrames = static_cast<int>(gInput.samples.size() / gInput.channels);
 
@@ -244,7 +280,7 @@ void fillBuffer(std::vector<int16_t>& buffer, PinchFxSimProcessor& processor, in
     for (int i = 0; i < frames; ++i) {
         const int readFrame = static_cast<int>(gReadIndex);
         const int readBase = readFrame * gInput.channels;
-        const float gain = gParams.inputGain.load();
+        const float gain = gParams.inputGain.load() * kInputGainBoost;
         const float inL = gInput.samples[readBase] * gain;
         const float inR = (gInput.channels > 1) ? gInput.samples[readBase + 1] * gain : inL;
 
@@ -252,8 +288,12 @@ void fillBuffer(std::vector<int16_t>& buffer, PinchFxSimProcessor& processor, in
         float tempOut[2]{};
         processor.processBlock(tempIn, tempOut, channels, 1);
 
-        const float outL = tempOut[0];
-        const float outR = (channels > 1) ? tempOut[1] : outL;
+        float outL = tempOut[0];
+        float outR = (channels > 1) ? tempOut[1] : outL;
+        if (mute) {
+            outL = 0.0f;
+            outR = 0.0f;
+        }
 
         gPitchF0.store(static_cast<float>(processor.lastF0()));
         gPitchFh.store(static_cast<float>(processor.lastFh()));
@@ -277,6 +317,16 @@ void fillBuffer(std::vector<int16_t>& buffer, PinchFxSimProcessor& processor, in
                 tapValue = norm * 2.0f - 1.0f;
                 break;
             }
+            case ScopeTap::ResonatorFreq: {
+                constexpr float kFhMin = 50.0f;
+                const float fhMax = std::max(200.0f, static_cast<float>(0.45 * static_cast<double>(gInput.sampleRate)));
+                const float fh = std::min(fhMax, std::max(kFhMin, gPitchFh.load()));
+                const float logMin = std::log2(kFhMin);
+                const float logMax = std::log2(fhMax);
+                const float norm = (std::log2(fh) - logMin) / std::max(1e-6f, (logMax - logMin));
+                tapValue = norm * 2.0f - 1.0f;
+                break;
+            }
             case ScopeTap::Resonator: {
                 tapValue = static_cast<float>(processor.lastResonator());
                 break;
@@ -290,7 +340,11 @@ void fillBuffer(std::vector<int16_t>& buffer, PinchFxSimProcessor& processor, in
 
         if (!gScopeFrozen.load()) {
             const int idx = gScope.writeIndex.fetch_add(1, std::memory_order_relaxed);
-            const int slot = (gScope.size > 0) ? (idx % gScope.size) : 0;
+            int slot = 0;
+            if (gScope.size > 0) {
+                slot = idx % gScope.size;
+                if (slot < 0) slot += gScope.size;
+            }
             if (gScope.size > 0) {
                 gScope.samples[slot].store(tapValue, std::memory_order_relaxed);
             }
@@ -394,7 +448,7 @@ LRESULT CALLBACK scopeWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
                 const float norm = gParams.scopeTime.load();
                 constexpr float kScopeMinSeconds = 0.25f;
-                constexpr float kScopeMaxSeconds = 5.0f;
+                constexpr float kScopeMaxSeconds = 30.0f;
                 const float timeSeconds = kScopeMinSeconds + (kScopeMaxSeconds - kScopeMinSeconds) * std::min(1.0f, std::max(0.0f, norm));
                 const int span = std::max(64, std::min(sampleCount, static_cast<int>(timeSeconds * gInput.sampleRate)));
 
@@ -410,6 +464,7 @@ LRESULT CALLBACK scopeWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 }
 
                 int start = writeIndex % sampleCount;
+                if (start < 0) start += sampleCount;
                 int yMid = plotRect.top + height / 2;
                 float v0 = snapshot[static_cast<size_t>(start)] * scale;
                 if (v0 > 1.0f) v0 = 1.0f;
@@ -417,7 +472,9 @@ LRESULT CALLBACK scopeWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 int y0 = yMid - static_cast<int>(v0 * (height / 2 - 2));
                 MoveToEx(hdc, plotRect.left, y0, nullptr);
                 for (int x = 1; x < width; ++x) {
-                    const int idx = (start + (x * span) / width) % sampleCount;
+                    const int64_t offset = (static_cast<int64_t>(x) * static_cast<int64_t>(span)) / static_cast<int64_t>(width);
+                    int idx = static_cast<int>((static_cast<int64_t>(start) + offset) % static_cast<int64_t>(sampleCount));
+                    if (idx < 0) idx += sampleCount;
                     float v = snapshot[static_cast<size_t>(idx)] * scale;
                     if (v > 1.0f) v = 1.0f;
                     if (v < -1.0f) v = -1.0f;
@@ -425,17 +482,6 @@ LRESULT CALLBACK scopeWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                     LineTo(hdc, plotRect.left + x, y);
                 }
 
-                char info[192]{};
-                const int tapIndex = std::clamp(gScopeTap.load(), 0, static_cast<int>(ScopeTap::Output));
-                const float f0 = gPitchF0.load();
-                const float fh = gPitchFh.load();
-                const float conf = gPitchConf.load();
-                std::snprintf(info, sizeof(info), "Tap: %s  Peak: %.3f  Level: %.1f dB  F0: %.1f Hz  Fh: %.1f Hz  Conf: %.2f",
-                              scopeTapLabel(static_cast<ScopeTap>(tapIndex)), peak, levelDb, f0, fh, conf);
-                SetBkMode(hdc, TRANSPARENT);
-                SetTextColor(hdc, RGB(220, 220, 220));
-                const int infoY = plotRect.top + 4;
-                TextOut(hdc, plotRect.left + 8, infoY, info, static_cast<int>(std::strlen(info)));
             }
 
             SelectObject(hdc, oldPen);
@@ -466,8 +512,8 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_COMMAND: {
             const int id = LOWORD(wParam);
             if (id == kIdEnable) {
-                const bool enabled = (SendMessage(reinterpret_cast<HWND>(lParam), BM_GETCHECK, 0, 0) == BST_CHECKED);
-                gParams.enabled.store(enabled);
+                const bool mute = (SendMessage(reinterpret_cast<HWND>(lParam), BM_GETCHECK, 0, 0) == BST_CHECKED);
+                gParams.mute.store(mute);
             }
             if (id == kIdScopeTap && HIWORD(wParam) == CBN_SELCHANGE) {
                 const int sel = static_cast<int>(SendMessage(gScopeCombo, CB_GETCURSEL, 0, 0));
@@ -483,6 +529,9 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             }
             return 0;
         }
+        case WM_TIMER:
+            updateTrackLabel();
+            return 0;
         case WM_DESTROY:
             gRunning = false;
             PostQuitMessage(0);
@@ -531,6 +580,12 @@ void createLabel(HWND parent, const SliderSpec& spec) {
     if (spec.id == kIdLock) {
         gResLabel = label;
         updateResLabel(spec.defaultValue);
+    } else if (spec.id == kIdPosition) {
+        gPositionLabel = label;
+        updatePositionLabel(spec.defaultValue);
+    } else if (spec.id == kIdTrack) {
+        gTrackLabel = label;
+        updateTrackLabel();
     }
 }
 
@@ -543,7 +598,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int cmdShow) {
     InitCommonControlsEx(&icc);
     timeBeginPeriod(1);
 
-    if (!pinchfx::sim::readWav("C:\\projects\\ableplugs\\pinchfx\\sim\\pluck.wav", gInput)) {
+    if (!pinchfx::sim::readWav(SAMPLE_WAV, gInput)) {
         MessageBox(nullptr, "Failed to read in.wav", "PinchFxSim", MB_OK | MB_ICONERROR);
         return 1;
     }
@@ -594,7 +649,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int cmdShow) {
     HWND enable = CreateWindowEx(
         0,
         "BUTTON",
-        "ENABLE",
+        "MUTE",
         WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         kLeftMargin,
         kTopMargin + static_cast<int>(std::size(kSliders)) * kRowHeight + 10,
@@ -604,9 +659,9 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int cmdShow) {
         reinterpret_cast<HMENU>(static_cast<intptr_t>(kIdEnable)),
         instance,
         nullptr);
-    SendMessage(enable, BM_SETCHECK, BST_CHECKED, 0);
+    SendMessage(enable, BM_SETCHECK, BST_UNCHECKED, 0);
 
-    constexpr float kScopeMaxSeconds = 5.0f;
+    constexpr float kScopeMaxSeconds = 30.0f;
     const int scopeSamples = std::max(2048, static_cast<int>(gInput.sampleRate * kScopeMaxSeconds));
     gScope.size = scopeSamples;
     gScope.samples = std::make_unique<std::atomic<float>[]>(static_cast<size_t>(scopeSamples));
@@ -742,6 +797,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int cmdShow) {
 
     ShowWindow(hwnd, cmdShow);
     UpdateWindow(hwnd);
+    SetTimer(hwnd, 2, 100, nullptr);
 
     HANDLE audioThread = CreateThread(nullptr, 0, audioThreadProc, nullptr, 0, nullptr);
 

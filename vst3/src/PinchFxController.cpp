@@ -18,11 +18,12 @@ namespace {
 
 const char* positionLabel(int index) {
     switch (index) {
-        case 0: return "5";
-        case 1: return "7";
-        case 2: return "9";
-        case 3: return "12";
-        case 4: return "15";
+        case 0: return "2";
+        case 1: return "5";
+        case 2: return "7";
+        case 3: return "9";
+        case 4: return "12";
+        case 5: return "15";
         default: return "";
     }
 }
@@ -68,8 +69,9 @@ Steinberg::tresult PLUGIN_API PinchFxController::initialize(FUnknown* context) {
     };
 
     addParam("TRIG", kParamTrig, defaultNormalized(kParamTrig), ParameterInfo::kCanAutomate, 1);
-    addParam("POSITION", kParamPosition, defaultNormalized(kParamPosition), ParameterInfo::kCanAutomate, 4);
+    addParam("PARTIAL", kParamPosition, defaultNormalized(kParamPosition), ParameterInfo::kCanAutomate, 5);
     addParam("RES", kParamLock, defaultNormalized(kParamLock), ParameterInfo::kCanAutomate);
+    addParam("TRACK", kParamGlide, defaultNormalized(kParamGlide), ParameterInfo::kCanAutomate);
     addParam("TONE", kParamTone, defaultNormalized(kParamTone), ParameterInfo::kCanAutomate);
     addParam("MIX", kParamMix, defaultNormalized(kParamMix), ParameterInfo::kCanAutomate);
     addParam("MONITOR", kParamMonitor, defaultNormalized(kParamMonitor), ParameterInfo::kCanAutomate, 7);
@@ -125,8 +127,8 @@ Steinberg::tresult PLUGIN_API PinchFxController::setParamNormalized(ParamID pid,
 Steinberg::tresult PLUGIN_API PinchFxController::getParamStringByValue(ParamID pid, ParamValue valueNormalized, String128 string) {
     UString128 result(string);
     if (pid == kParamPosition) {
-        int idx = static_cast<int>(std::round(valueNormalized * 4.0));
-        result.fromAscii(positionLabel(std::clamp(idx, 0, 4)));
+        int idx = static_cast<int>(std::round(valueNormalized * 5.0));
+        result.fromAscii(positionLabel(std::clamp(idx, 0, 5)));
         return kResultOk;
     }
     if (pid == kParamMonitor) {
@@ -139,9 +141,9 @@ Steinberg::tresult PLUGIN_API PinchFxController::getParamStringByValue(ParamID p
 
 Steinberg::tresult PLUGIN_API PinchFxController::getParamValueByString(ParamID pid, TChar* string, ParamValue& valueNormalized) {
     if (pid == kParamPosition) {
-        for (int i = 0; i < 5; ++i) {
+        for (int i = 0; i < 6; ++i) {
             if (equalsAscii(string, positionLabel(i))) {
-                valueNormalized = static_cast<ParamValue>(i) / 4.0;
+                valueNormalized = static_cast<ParamValue>(i) / 5.0;
                 return kResultOk;
             }
         }
@@ -163,7 +165,7 @@ void PinchFxController::buildParamOrder() {
     paramOrder_.push_back(kParamPosition);
     paramOrder_.push_back(kParamSqueal); // Hidden legacy slot for state compatibility.
     paramOrder_.push_back(kParamLock);
-    paramOrder_.push_back(kParamGlide); // Hidden legacy slot for state compatibility.
+    paramOrder_.push_back(kParamGlide); // Tracker time-constant control.
     paramOrder_.push_back(kParamTone);
     paramOrder_.push_back(kParamMix);
     paramOrder_.push_back(kParamMonitor);
@@ -177,9 +179,9 @@ ParamValue PinchFxController::defaultNormalized(ParamID pid) const {
         case kParamTrig: return 0.0;
         case kParamPosition: return 0.5;
         case kParamSqueal: return 0.5;
-        case kParamLock: return 0.5;
+        case kParamLock: return 0.1111111111111111;
         case kParamGlide: return 0.25;
-        case kParamTone: return 0.5;
+        case kParamTone: return 1.0;
         case kParamMix: return 0.35;
         case kParamMonitor: return 0.0;
         case kParamMode: return 0.0;
