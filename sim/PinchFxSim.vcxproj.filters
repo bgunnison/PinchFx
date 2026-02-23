@@ -9,6 +9,9 @@
     <ClInclude Include="src\SimIO.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\config.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="src\PinchFxSimProcessor.h">
       <Filter>Header Files</Filter>
     </ClInclude>

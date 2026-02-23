@@ -2,6 +2,7 @@
 // MIT License
 #include "SimIO.h"
 #include "PinchFxSimProcessor.h"
+#include "config.h"
 
 //#define SAMPLEWAV "C:\\projects\\ableplugs\\pinchfx\\sim\\pluck.wav"
 //#define SAMPLE_WAV "C:\\projects\\ableplugs\\pinchfx\\sim\\cleanchords.wav"
@@ -37,10 +38,13 @@ struct SharedParams {
     std::atomic<float> mix{0.35f};
     std::atomic<float> heat{0.0f};
     std::atomic<bool> mute{false};
+#if PINCHFX_SIM_ENABLE_SCOPE
     std::atomic<float> scopeTime{0.5f}; // 0..1 mapped to 0.25x..4x
     std::atomic<float> scopeLevel{0.5f}; // 0..1 mapped to 0.25x..4x
+#endif
 };
 
+#if PINCHFX_SIM_ENABLE_SCOPE
 enum class ScopeTap : int {
     Input = 0,
     Agc,
@@ -52,6 +56,7 @@ enum class ScopeTap : int {
     Limiter,
     Output
 };
+#endif
 
 struct SliderSpec {
     const char* label;
@@ -68,7 +73,9 @@ constexpr int kLabelWidth = 110;
 constexpr int kLeftMargin = 16;
 constexpr int kTopMargin = 16;
 constexpr int kRowHeight = 36;
+#if PINCHFX_SIM_ENABLE_SCOPE
 constexpr int kScopeTopBar = 64;
+#endif
 
 constexpr int kIdPosition = 1001;
 constexpr int kIdLock = 1003;
@@ -78,10 +85,12 @@ constexpr int kIdMix = 1006;
 constexpr int kIdHeat = 1008;
 constexpr int kIdInputGain = 1011;
 constexpr int kIdEnable = 1012;
+#if PINCHFX_SIM_ENABLE_SCOPE
 constexpr int kIdScopeTap = 1013;
 constexpr int kIdScopeTime = 1015;
 constexpr int kIdScopeFreeze = 1016;
 constexpr int kIdScopeLevel = 1017;
+#endif
 
 constexpr float kResDefault = 0.1111111111111111f;
 constexpr float kQMin = 0.5f;
@@ -117,6 +126,7 @@ std::atomic<bool> gRunning{true};
 SharedParams gParams{};
 AudioBuffer gInput{};
 size_t gReadIndex = 0;
+#if PINCHFX_SIM_ENABLE_SCOPE
 std::atomic<int> gScopeTap{static_cast<int>(ScopeTap::Output)};
 ScopeBuffer gScope{};
 HWND gScopeCombo = nullptr;
@@ -124,11 +134,12 @@ HWND gScopeHwnd = nullptr;
 HWND gScopeTimeSlider = nullptr;
 HWND gScopeFreezeButton = nullptr;
 HWND gScopeLevelSlider = nullptr;
+std::atomic<bool> gScopeFrozen{false};
+#endif
 HWND gLockSlider = nullptr;
 HWND gResLabel = nullptr;
 HWND gTrackLabel = nullptr;
 HWND gPositionLabel = nullptr;
-std::atomic<bool> gScopeFrozen{false};
 std::atomic<float> gPitchF0{0.0f};
 std::atomic<float> gPitchFh{0.0f};
 std::atomic<float> gPitchConf{0.0f};
@@ -195,12 +206,15 @@ void updateParamsFromSlider(int id, int pos) {
         case kIdTone: gParams.tone.store(norm); break;
         case kIdMix: gParams.mix.store(norm); break;
         case kIdHeat: gParams.heat.store(norm); break;
+#if PINCHFX_SIM_ENABLE_SCOPE
         case kIdScopeTime: gParams.scopeTime.store(norm); break;
         case kIdScopeLevel: gParams.scopeLevel.store(norm); break;
+#endif
         default: break;
     }
 }
 
+#if PINCHFX_SIM_ENABLE_SCOPE
 const char* scopeTapLabel(ScopeTap tap) {
     switch (tap) {
         case ScopeTap::Input: return "Input";
@@ -215,6 +229,7 @@ const char* scopeTapLabel(ScopeTap tap) {
         default: return "Output";
     }
 }
+#endif
 
 bool initAudioOutput(AudioState& audio, int sampleRate, int channels, int framesPerBuffer) {
     audio.format.wFormatTag = WAVE_FORMAT_PCM;
@@ -276,7 +291,9 @@ void fillBuffer(std::vector<int16_t>& buffer, PinchFxSimProcessor& processor, in
 
     const int totalFrames = static_cast<int>(gInput.samples.size() / gInput.channels);
 
+#if PINCHFX_SIM_ENABLE_SCOPE
     const ScopeTap tap = static_cast<ScopeTap>(gScopeTap.load());
+#endif
     for (int i = 0; i < frames; ++i) {
         const int readFrame = static_cast<int>(gReadIndex);
         const int readBase = readFrame * gInput.channels;
@@ -305,6 +322,7 @@ void fillBuffer(std::vector<int16_t>& buffer, PinchFxSimProcessor& processor, in
         buffer[static_cast<size_t>(i * channels)] = sL;
         if (channels > 1) buffer[static_cast<size_t>(i * channels + 1)] = sR;
 
+#if PINCHFX_SIM_ENABLE_SCOPE
         float tapValue = 0.0f;
         switch (tap) {
             case ScopeTap::Input: tapValue = 0.5f * (inL + inR); break;
@@ -349,6 +367,7 @@ void fillBuffer(std::vector<int16_t>& buffer, PinchFxSimProcessor& processor, in
                 gScope.samples[slot].store(tapValue, std::memory_order_relaxed);
             }
         }
+#endif
 
         gReadIndex = (gReadIndex + 1) % static_cast<size_t>(totalFrames);
     }
@@ -389,6 +408,7 @@ DWORD WINAPI audioThreadProc(LPVOID) {
     return 0;
 }
 
+#if PINCHFX_SIM_ENABLE_SCOPE
 LRESULT CALLBACK scopeWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
         case WM_HSCROLL: {
@@ -497,6 +517,7 @@ LRESULT CALLBACK scopeWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             return DefWindowProc(hwnd, msg, wParam, lParam);
     }
 }
+#endif
 
 LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
@@ -515,6 +536,7 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 const bool mute = (SendMessage(reinterpret_cast<HWND>(lParam), BM_GETCHECK, 0, 0) == BST_CHECKED);
                 gParams.mute.store(mute);
             }
+#if PINCHFX_SIM_ENABLE_SCOPE
             if (id == kIdScopeTap && HIWORD(wParam) == CBN_SELCHANGE) {
                 const int sel = static_cast<int>(SendMessage(gScopeCombo, CB_GETCURSEL, 0, 0));
                 gScopeTap.store(sel);
@@ -527,6 +549,7 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 const bool enabled = (SendMessage(reinterpret_cast<HWND>(lParam), BM_GETCHECK, 0, 0) == BST_CHECKED);
                 gScopeFrozen.store(enabled);
             }
+#endif
             return 0;
         }
         case WM_TIMER:
@@ -604,11 +627,8 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int cmdShow) {
     }
 
     const char* className = "PinchFxSimWindow";
-    const char* scopeClassName = "PinchFxScopeWindow";
     char mainTitle[128]{};
-    char scopeTitle[128]{};
     std::snprintf(mainTitle, sizeof(mainTitle), "PinchFxSim (%s %s)", __DATE__, __TIME__);
-    std::snprintf(scopeTitle, sizeof(scopeTitle), "PinchFx Scope (%s %s)", __DATE__, __TIME__);
     WNDCLASS wc{};
     wc.lpfnWndProc = wndProc;
     wc.hInstance = instance;
@@ -616,12 +636,17 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int cmdShow) {
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
     RegisterClass(&wc);
 
+#if PINCHFX_SIM_ENABLE_SCOPE
+    const char* scopeClassName = "PinchFxScopeWindow";
+    char scopeTitle[128]{};
+    std::snprintf(scopeTitle, sizeof(scopeTitle), "PinchFx Scope (%s %s)", __DATE__, __TIME__);
     WNDCLASS swc{};
     swc.lpfnWndProc = scopeWndProc;
     swc.hInstance = instance;
     swc.lpszClassName = scopeClassName;
     swc.hCursor = LoadCursor(nullptr, IDC_ARROW);
     RegisterClass(&swc);
+#endif
 
     const int width = 420;
     const int height = kTopMargin + static_cast<int>(std::size(kSliders)) * kRowHeight + 120;
@@ -661,6 +686,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int cmdShow) {
         nullptr);
     SendMessage(enable, BM_SETCHECK, BST_UNCHECKED, 0);
 
+#if PINCHFX_SIM_ENABLE_SCOPE
     constexpr float kScopeMaxSeconds = 30.0f;
     const int scopeSamples = std::max(2048, static_cast<int>(gInput.sampleRate * kScopeMaxSeconds));
     gScope.size = scopeSamples;
@@ -794,6 +820,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int cmdShow) {
             instance,
             nullptr);
     }
+#endif
 
     ShowWindow(hwnd, cmdShow);
     UpdateWindow(hwnd);

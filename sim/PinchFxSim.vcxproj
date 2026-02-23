@@ -24,6 +24,8 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
     <IntermediateOutputPath>C:\Users\bgunn\AppData\Local\Temp\vs17B.tmp\X64\Debug\</IntermediateOutputPath>
+    <DefineConstants>
+    </DefineConstants>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|Win32'">
     <IntermediateOutputPath>C:\Users\bgunn\AppData\Local\Temp\vs17B.tmp\Win32\Debug\</IntermediateOutputPath>
@@ -116,6 +118,10 @@
     <ClInclude Include="..\vst3\src\dsp\PitchTrackerAlgo.h" />
     <ClInclude Include="..\vst3\src\dsp\TwoPoleResonator.h" />
     <ClInclude Include="..\vst3\src\dsp\TubeStage.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include=".gitignore" />
+    <Content Include="src\config.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
