@@ -45,6 +45,7 @@ set(PinchFX_HEADERS
     src/dsp/PitchTrackerACF.h
     src/dsp/PitchTrackerAlgo.h
     src/dsp/TwoPoleResonator.h
+    src/dsp/MiniComb.h
     src/dsp/OnePoleLP.h
     src/dsp/Oversampler2x.h
     src/dsp/TubeStage.h

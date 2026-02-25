@@ -6,6 +6,7 @@
 #include "PitchTrackerACF.h"
 #include "PitchTrackerAlgo.h"
 #include "TwoPoleResonator.h"
+#include "MiniComb.h"
 #include "OnePoleLP.h"
 #include "TubeStage.h"
 #include "PeakLimiter.h"
@@ -17,7 +18,8 @@
 namespace pinchfx::dsp {
 
 // Pinch harmonic synth path:
-// input -> pitch tracker -> pitch-control smoothing -> AGC -> resonator @ harmonic -> heat blend -> 4-pole tone LP -> limiter
+// input -> pitch tracker -> pitch-control smoothing -> AGC -> resonator @ harmonic -> comb feedback (same tuned freq)
+// -> heat blend -> 4-pole tone LP -> limiter
 class PinchFxAlgorithm {
 public:
     struct Params {
@@ -31,6 +33,7 @@ public:
         static constexpr double DEFAULT_MODE = 0.0; // Legacy state slot (unused).
         static constexpr double DEFAULT_HEAT = 0.0; // No added drive.
         static constexpr double DEFAULT_SENS = 0.5; // AGC drive trim neutral point.
+        static constexpr double DEFAULT_FEEDBACK = 0.0; // Comb stage off by default.
 
         double trig{DEFAULT_TRIG};
         double position{DEFAULT_POSITION};
@@ -42,6 +45,7 @@ public:
         double mode{DEFAULT_MODE}; // Legacy state slot (unused).
         double heat{DEFAULT_HEAT};
         double sens{DEFAULT_SENS}; // AGC drive trim control (0.5 = unity).
+        double feedback{DEFAULT_FEEDBACK}; // Mini-comb feedback amount.
     };
 
     struct SampleOut {
@@ -76,6 +80,8 @@ public:
         pitchControl_.setMaxCentsPerSecond(PITCH_CTRL_MAX_CENTS_PER_SEC);
 
         resonator_.setSampleRate(sampleRate_);
+        comb_.prepare(sampleRate_, COMB_MAX_DELAY_SECONDS);
+        comb_.setSampleRate(sampleRate_);
         toneLP_.setSampleRate(sampleRate_);
         toneLP2_.setSampleRate(sampleRate_);
         toneLP3_.setSampleRate(sampleRate_);
@@ -92,6 +98,7 @@ public:
         pitchTracker_.reset();
         pitchControl_.reset();
         resonator_.reset();
+        comb_.reset();
         toneLP_.reset();
         toneLP2_.reset();
         toneLP3_.reset();
@@ -129,6 +136,7 @@ public:
         double fhFinal = std::clamp(fh, MIN_HARMONIC_HZ, MAX_HARMONIC_NYQUIST * sampleRate_);
         if (!std::isfinite(fhFinal)) fhFinal = DEFAULT_F0_HZ;
         resonator_.setFrequency(fhFinal);
+        comb_.setFrequency(fhFinal);
 
         const double absIn = std::abs(monoIn);
         const double agcEnvCoeff = (absIn > agcDetector_) ? agcEnvAttackCoeff_ : agcEnvReleaseCoeff_;
@@ -151,7 +159,8 @@ public:
         const bool pitchGate = estimateInRange && (conf >= MIN_CONFIDENCE_GATE) && (pitchError <= PITCH_ERROR_RATIO_GATE);
         out.gate = pitchGate ? 1.0 : 0.0;
         out.pitchGate = out.gate;
-        out.xr = RESONATOR_OUTPUT_GAIN * out.xbp;
+        const double resonatorOut = RESONATOR_OUTPUT_GAIN * out.xbp;
+        out.xr = comb_.process(resonatorOut); // Serial stage: resonator output feeds comb directly.
         const double tubeOut = tubeStage_.process(out.xr);
         const double heatMix = std::clamp(params_.heat, 0.0, 1.0);
         out.xtube = out.xr + heatMix * (tubeOut - out.xr);
@@ -213,17 +222,21 @@ private:
     static constexpr double AGC_DRIVE = 1.0; // Resonator drive scalar.
     static constexpr double AGC_DRIVE_CLIP = 2.0; // Clip drive to keep resonator bounded.
     static constexpr double AGC_DRIVE_TRIM_DB_RANGE = 40.0; // sens maps to -20..+20 dB around unity.
+    static constexpr double COMB_MAX_DELAY_SECONDS = 0.2; // Supports low tuning frequencies without wrap.
+    static constexpr double COMB_DAMPING = 0.35; // Prevents harsh high-frequency buildup.
     static constexpr double DEFAULT_Q_VALUE = Q_MIN + Q_RANGE * Params::DEFAULT_LOCK; // Derived default Q.
     static constexpr double DEFAULT_TONE_CUTOFF = TONE_CUTOFF_MIN + TONE_CUTOFF_RANGE * Params::DEFAULT_TONE; // Derived default tone cutoff.
     static constexpr double DEFAULT_TUBE_DRIVE = TUBE_DRIVE_BASE + TUBE_DRIVE_RANGE * Params::DEFAULT_HEAT; // Derived default drive.
     static constexpr double DEFAULT_TUBE_BIAS = TUBE_BIAS_BASE - TUBE_BIAS_RANGE * Params::DEFAULT_TONE; // Derived default bias.
     static constexpr double DEFAULT_AGC_DRIVE_TRIM = 1.0; // sens default (0.5) keeps AGC drive unchanged.
+    static constexpr double DEFAULT_COMB_FEEDBACK = Params::DEFAULT_FEEDBACK; // Derived default comb feedback.
 
     void updateDerived() {
         const double lock = params_.lock;
         const double tone = params_.tone;
         const double heat = params_.heat;
         const double sens = std::clamp(params_.sens, 0.0, 1.0);
+        const double feedback = std::clamp(params_.feedback, 0.0, 1.0);
         const double glide = std::clamp(params_.glide, 0.0, 1.0);
         const double trackerScale = TRACKER_TC_SCALE_MIN + TRACKER_TC_SCALE_RANGE * glide;
         const double trackerTauSlow = PITCH_CTRL_TAU_SLOW_SEC * trackerScale;
@@ -235,6 +248,7 @@ private:
         tubeDrive_ = TUBE_DRIVE_BASE + TUBE_DRIVE_RANGE * heat;
         tubeBias_ = TUBE_BIAS_BASE - TUBE_BIAS_RANGE * tone;
         agcDriveTrim_ = std::pow(10.0, driveTrimDb / 20.0);
+        combFeedback_ = feedback;
 
         static constexpr std::array<int, 6> PARTIALS{2, 5, 7, 9, 12, 15}; // Include octave partial plus pinch-focused upper partials.
         const int posIndex = static_cast<int>(std::round(std::clamp(params_.position, 0.0, 1.0) * POSITION_SCALE));
@@ -245,6 +259,9 @@ private:
         toneLP3_.setCutoff(toneCutoff_);
         toneLP4_.setCutoff(toneCutoff_);
         resonator_.setQ(qValue_);
+        comb_.setFeedback(combFeedback_);
+        comb_.setMix(1.0);
+        comb_.setDamping(COMB_DAMPING);
         pitchControl_.setTimeConstants(trackerTauSlow, trackerTauFast);
         tubeStage_.setDrive(tubeDrive_);
         tubeStage_.setBias(tubeBias_);
@@ -266,6 +283,7 @@ private:
     PitchTrackerACF pitchTracker_{};
     PitchTrackerAlgo pitchControl_{};
     TwoPoleResonator resonator_{};
+    MiniComb comb_{};
     OnePoleLP toneLP_{};
     OnePoleLP toneLP2_{};
     OnePoleLP toneLP3_{};
@@ -291,6 +309,7 @@ private:
     double tubeDrive_{DEFAULT_TUBE_DRIVE};
     double tubeBias_{DEFAULT_TUBE_BIAS};
     double agcDriveTrim_{DEFAULT_AGC_DRIVE_TRIM};
+    double combFeedback_{DEFAULT_COMB_FEEDBACK};
 };
 
 } // namespace pinchfx::dsp

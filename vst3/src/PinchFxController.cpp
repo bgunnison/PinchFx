@@ -71,6 +71,7 @@ Steinberg::tresult PLUGIN_API PinchFxController::initialize(FUnknown* context) {
     addParam("TRIG", kParamTrig, defaultNormalized(kParamTrig), ParameterInfo::kCanAutomate, 1);
     addParam("PARTIAL", kParamPosition, defaultNormalized(kParamPosition), ParameterInfo::kCanAutomate, 5);
     addParam("RES", kParamLock, defaultNormalized(kParamLock), ParameterInfo::kCanAutomate);
+    addParam("FEEDBACK", kParamSqueal, defaultNormalized(kParamSqueal), ParameterInfo::kCanAutomate);
     addParam("TRACK", kParamGlide, defaultNormalized(kParamGlide), ParameterInfo::kCanAutomate);
     addParam("TONE", kParamTone, defaultNormalized(kParamTone), ParameterInfo::kCanAutomate);
     addParam("MIX", kParamMix, defaultNormalized(kParamMix), ParameterInfo::kCanAutomate);
@@ -163,7 +164,7 @@ void PinchFxController::buildParamOrder() {
     paramOrder_.clear();
     paramOrder_.push_back(kParamTrig);
     paramOrder_.push_back(kParamPosition);
-    paramOrder_.push_back(kParamSqueal); // Hidden legacy slot for state compatibility.
+    paramOrder_.push_back(kParamSqueal); // FEEDBACK control (reuses legacy slot).
     paramOrder_.push_back(kParamLock);
     paramOrder_.push_back(kParamGlide); // Tracker time-constant control.
     paramOrder_.push_back(kParamTone);
@@ -178,7 +179,7 @@ ParamValue PinchFxController::defaultNormalized(ParamID pid) const {
     switch (pid) {
         case kParamTrig: return 0.0;
         case kParamPosition: return 0.5;
-        case kParamSqueal: return 0.5;
+        case kParamSqueal: return 0.0;
         case kParamLock: return 0.1111111111111111;
         case kParamGlide: return 0.25;
         case kParamTone: return 1.0;

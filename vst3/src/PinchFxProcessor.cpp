@@ -99,7 +99,7 @@ void PinchFxProcessor::buildParamOrder() {
     paramOrder_.clear();
     paramOrder_.push_back(kParamTrig);
     paramOrder_.push_back(kParamPosition);
-    paramOrder_.push_back(kParamSqueal); // Hidden legacy slot for state compatibility.
+    paramOrder_.push_back(kParamSqueal); // FEEDBACK control (reuses legacy slot).
     paramOrder_.push_back(kParamLock);
     paramOrder_.push_back(kParamGlide); // Tracker time-constant control.
     paramOrder_.push_back(kParamTone);
@@ -119,7 +119,7 @@ ParamValue PinchFxProcessor::defaultNormalized(ParamID pid) const {
     switch (pid) {
         case kParamTrig: return 0.0;
         case kParamPosition: return 0.5;
-        case kParamSqueal: return 0.5;
+        case kParamSqueal: return 0.0;
         case kParamLock: return 0.1111111111111111;
         case kParamGlide: return 0.25;
         case kParamTone: return 1.0;
@@ -178,7 +178,7 @@ void PinchFxProcessor::applyNormalizedParam(ParamID pid, ParamValue value) {
     switch (pid) {
         case kParamTrig: params_.trig = value; break;
         case kParamPosition: params_.position = value; break;
-        case kParamSqueal: break; // Legacy no-op.
+        case kParamSqueal: params_.feedback = value; break;
         case kParamLock: params_.lock = value; break;
         case kParamGlide: params_.glide = value; break;
         case kParamTone: params_.tone = value; break;
