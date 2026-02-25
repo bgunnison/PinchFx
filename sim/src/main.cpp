@@ -33,9 +33,18 @@ namespace {
 
 struct SharedParams {
     std::atomic<float> inputGain{0.5f};
-    std::atomic<float> position{0.5f};
-    std::atomic<float> lock{0.1111111111111111f};
-    std::atomic<float> feedback{0.0f};
+    std::atomic<float> position1{0.5f};
+    std::atomic<float> lock1{0.1111111111111111f};
+    std::atomic<float> feedback1{0.0f};
+    std::atomic<float> gain1{1.0f};
+    std::atomic<float> position2{0.5f};
+    std::atomic<float> lock2{0.1111111111111111f};
+    std::atomic<float> feedback2{0.0f};
+    std::atomic<float> gain2{0.0f};
+    std::atomic<float> position3{0.5f};
+    std::atomic<float> lock3{0.1111111111111111f};
+    std::atomic<float> feedback3{0.0f};
+    std::atomic<float> gain3{0.0f};
     std::atomic<float> glide{0.25f};
     std::atomic<float> tone{1.0f};
     std::atomic<float> mix{0.35f};
@@ -59,15 +68,24 @@ constexpr int kLeftMargin = 16;
 constexpr int kTopMargin = 16;
 constexpr int kRowHeight = 36;
 
-constexpr int kIdPosition = 1001;
-constexpr int kIdFeedback = 1002;
-constexpr int kIdLock = 1003;
+constexpr int kIdPosition1 = 1001;
+constexpr int kIdFeedback1 = 1002;
+constexpr int kIdLock1 = 1003;
 constexpr int kIdTrack = 1004;
 constexpr int kIdTone = 1005;
 constexpr int kIdMix = 1006;
+constexpr int kIdGain1 = 1007;
 constexpr int kIdHeat = 1008;
+constexpr int kIdPosition2 = 1009;
+constexpr int kIdFeedback2 = 1010;
 constexpr int kIdInputGain = 1011;
 constexpr int kIdEnable = 1012;
+constexpr int kIdLock2 = 1013;
+constexpr int kIdGain2 = 1014;
+constexpr int kIdPosition3 = 1015;
+constexpr int kIdFeedback3 = 1016;
+constexpr int kIdLock3 = 1017;
+constexpr int kIdGain3 = 1018;
 
 constexpr float kResDefault = 0.1111111111111111f;
 constexpr float kQMin = 0.5f;
@@ -78,12 +96,21 @@ constexpr float kInputGainBoost = 10.0f;
 constexpr SliderSpec kSliders[] = {
     {"INPUT", kIdInputGain, kTopMargin + 0 * kRowHeight, 0, 1000, 0.5f},
     {"TRACK DELAY", kIdTrack, kTopMargin + 1 * kRowHeight, 0, 1000, 0.25f},
-    {"PARTIAL", kIdPosition, kTopMargin + 2 * kRowHeight, 0, 1000, 0.5f},
-    {"RES", kIdLock, kTopMargin + 3 * kRowHeight, 0, 1000, kResDefault},
-    {"FEEDBACK", kIdFeedback, kTopMargin + 4 * kRowHeight, 0, 1000, 0.0f},
-    {"HEAT", kIdHeat, kTopMargin + 5 * kRowHeight, 0, 1000, 0.0f},
-    {"TONE", kIdTone, kTopMargin + 6 * kRowHeight, 0, 1000, 1.0f},
-    {"WET/DRY", kIdMix, kTopMargin + 7 * kRowHeight, 0, 1000, 0.35f},
+    {"A PARTIAL", kIdPosition1, kTopMargin + 2 * kRowHeight, 0, 1000, 0.5f},
+    {"A RES", kIdLock1, kTopMargin + 3 * kRowHeight, 0, 1000, kResDefault},
+    {"A FEEDBACK", kIdFeedback1, kTopMargin + 4 * kRowHeight, 0, 1000, 0.0f},
+    {"A GAIN", kIdGain1, kTopMargin + 5 * kRowHeight, 0, 1000, 1.0f},
+    {"B PARTIAL", kIdPosition2, kTopMargin + 6 * kRowHeight, 0, 1000, 0.5f},
+    {"B RES", kIdLock2, kTopMargin + 7 * kRowHeight, 0, 1000, kResDefault},
+    {"B FEEDBACK", kIdFeedback2, kTopMargin + 8 * kRowHeight, 0, 1000, 0.0f},
+    {"B GAIN", kIdGain2, kTopMargin + 9 * kRowHeight, 0, 1000, 0.0f},
+    {"C PARTIAL", kIdPosition3, kTopMargin + 10 * kRowHeight, 0, 1000, 0.5f},
+    {"C RES", kIdLock3, kTopMargin + 11 * kRowHeight, 0, 1000, kResDefault},
+    {"C FEEDBACK", kIdFeedback3, kTopMargin + 12 * kRowHeight, 0, 1000, 0.0f},
+    {"C GAIN", kIdGain3, kTopMargin + 13 * kRowHeight, 0, 1000, 0.0f},
+    {"HEAT", kIdHeat, kTopMargin + 14 * kRowHeight, 0, 1000, 0.0f},
+    {"TONE", kIdTone, kTopMargin + 15 * kRowHeight, 0, 1000, 1.0f},
+    {"WET/DRY", kIdMix, kTopMargin + 16 * kRowHeight, 0, 1000, 0.35f},
 };
 
 struct AudioState {
@@ -99,8 +126,9 @@ SharedParams gParams{};
 AudioBuffer gInput{};
 size_t gReadIndex = 0;
 SimScope gScope{};
-HWND gResLabel = nullptr;
-HWND gPositionLabel = nullptr;
+HWND gResLabels[3]{};
+HWND gPositionLabels[3]{};
+HWND gGainLabels[3]{};
 
 float sliderPosToNorm(int pos) {
     return static_cast<float>(pos) / 1000.0f;
@@ -116,38 +144,82 @@ void setSliderValue(HWND slider, float value) {
     SendMessage(slider, TBM_SETPOS, TRUE, normToSliderPos(value));
 }
 
-void updateResLabel(float resValue) {
-    if (!gResLabel) return;
+void updateResLabel(int groupIndex, float resValue) {
+    if (groupIndex < 0 || groupIndex > 2) return;
+    HWND label = gResLabels[groupIndex];
+    if (!label) return;
     const float qValue = kQMin + kQRange * std::min(1.0f, std::max(0.0f, resValue));
     char text[32]{};
-    std::snprintf(text, sizeof(text), "RES %.2f", qValue);
-    SetWindowText(gResLabel, text);
+    std::snprintf(text, sizeof(text), "%c RES %.2f", static_cast<char>('A' + groupIndex), qValue);
+    SetWindowText(label, text);
 }
 
-void updatePositionLabel(float positionValue) {
-    if (!gPositionLabel) return;
+void updatePositionLabel(int groupIndex, float positionValue) {
+    if (groupIndex < 0 || groupIndex > 2) return;
+    HWND label = gPositionLabels[groupIndex];
+    if (!label) return;
     static constexpr int kPartials[6] = {2, 5, 7, 9, 12, 15};
     const float clamped = std::min(1.0f, std::max(0.0f, positionValue));
     const int index = static_cast<int>(std::round(clamped * 5.0f));
     const int partial = kPartials[std::clamp(index, 0, 5)];
     char text[48]{};
-    std::snprintf(text, sizeof(text), "PARTIAL: %d", partial);
-    SetWindowText(gPositionLabel, text);
+    std::snprintf(text, sizeof(text), "%c PARTIAL: %d", static_cast<char>('A' + groupIndex), partial);
+    SetWindowText(label, text);
+}
+
+void updateGainLabel(int groupIndex, float gainValue) {
+    if (groupIndex < 0 || groupIndex > 2) return;
+    HWND label = gGainLabels[groupIndex];
+    if (!label) return;
+    const float clamped = std::min(1.0f, std::max(0.0f, gainValue));
+    char text[48]{};
+    std::snprintf(text, sizeof(text), "%c GAIN %.2f", static_cast<char>('A' + groupIndex), clamped);
+    SetWindowText(label, text);
 }
 
 void updateParamsFromSlider(int id, int pos) {
     const float norm = sliderPosToNorm(pos);
     switch (id) {
         case kIdInputGain: gParams.inputGain.store(norm); break;
-        case kIdPosition:
-            gParams.position.store(norm);
-            updatePositionLabel(norm);
+        case kIdPosition1:
+            gParams.position1.store(norm);
+            updatePositionLabel(0, norm);
             break;
-        case kIdLock:
-            gParams.lock.store(norm);
-            updateResLabel(norm);
+        case kIdLock1:
+            gParams.lock1.store(norm);
+            updateResLabel(0, norm);
             break;
-        case kIdFeedback: gParams.feedback.store(norm); break;
+        case kIdFeedback1: gParams.feedback1.store(norm); break;
+        case kIdGain1:
+            gParams.gain1.store(norm);
+            updateGainLabel(0, norm);
+            break;
+        case kIdPosition2:
+            gParams.position2.store(norm);
+            updatePositionLabel(1, norm);
+            break;
+        case kIdLock2:
+            gParams.lock2.store(norm);
+            updateResLabel(1, norm);
+            break;
+        case kIdFeedback2: gParams.feedback2.store(norm); break;
+        case kIdGain2:
+            gParams.gain2.store(norm);
+            updateGainLabel(1, norm);
+            break;
+        case kIdPosition3:
+            gParams.position3.store(norm);
+            updatePositionLabel(2, norm);
+            break;
+        case kIdLock3:
+            gParams.lock3.store(norm);
+            updateResLabel(2, norm);
+            break;
+        case kIdFeedback3: gParams.feedback3.store(norm); break;
+        case kIdGain3:
+            gParams.gain3.store(norm);
+            updateGainLabel(2, norm);
+            break;
         case kIdTrack: gParams.glide.store(norm); break;
         case kIdTone: gParams.tone.store(norm); break;
         case kIdMix: gParams.mix.store(norm); break;
@@ -204,9 +276,18 @@ void shutdownAudio(AudioState& audio) {
 
 void fillBuffer(std::vector<int16_t>& buffer, PinchFxSimProcessor& processor, int frames, int channels) {
     PinchFxSimProcessor::Params params{};
-    params.position = gParams.position.load();
-    params.lock = gParams.lock.load();
-    params.feedback = gParams.feedback.load();
+    params.position = gParams.position1.load();
+    params.lock = gParams.lock1.load();
+    params.feedback = gParams.feedback1.load();
+    params.gain1 = gParams.gain1.load();
+    params.position2 = gParams.position2.load();
+    params.lock2 = gParams.lock2.load();
+    params.feedback2 = gParams.feedback2.load();
+    params.gain2 = gParams.gain2.load();
+    params.position3 = gParams.position3.load();
+    params.lock3 = gParams.lock3.load();
+    params.feedback3 = gParams.feedback3.load();
+    params.gain3 = gParams.gain3.load();
     params.glide = gParams.glide.load();
     params.tone = gParams.tone.load();
     params.mix = gParams.mix.load();
@@ -356,12 +437,33 @@ void createLabel(HWND parent, const SliderSpec& spec) {
         nullptr,
         nullptr,
         nullptr);
-    if (spec.id == kIdLock) {
-        gResLabel = label;
-        updateResLabel(spec.defaultValue);
-    } else if (spec.id == kIdPosition) {
-        gPositionLabel = label;
-        updatePositionLabel(spec.defaultValue);
+    if (spec.id == kIdLock1) {
+        gResLabels[0] = label;
+        updateResLabel(0, spec.defaultValue);
+    } else if (spec.id == kIdLock2) {
+        gResLabels[1] = label;
+        updateResLabel(1, spec.defaultValue);
+    } else if (spec.id == kIdLock3) {
+        gResLabels[2] = label;
+        updateResLabel(2, spec.defaultValue);
+    } else if (spec.id == kIdPosition1) {
+        gPositionLabels[0] = label;
+        updatePositionLabel(0, spec.defaultValue);
+    } else if (spec.id == kIdPosition2) {
+        gPositionLabels[1] = label;
+        updatePositionLabel(1, spec.defaultValue);
+    } else if (spec.id == kIdPosition3) {
+        gPositionLabels[2] = label;
+        updatePositionLabel(2, spec.defaultValue);
+    } else if (spec.id == kIdGain1) {
+        gGainLabels[0] = label;
+        updateGainLabel(0, spec.defaultValue);
+    } else if (spec.id == kIdGain2) {
+        gGainLabels[1] = label;
+        updateGainLabel(1, spec.defaultValue);
+    } else if (spec.id == kIdGain3) {
+        gGainLabels[2] = label;
+        updateGainLabel(2, spec.defaultValue);
     }
 }
 

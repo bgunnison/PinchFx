@@ -18,14 +18,18 @@
 namespace pinchfx::dsp {
 
 // Pinch harmonic synth path:
-// input -> pitch tracker -> pitch-control smoothing -> AGC -> resonator @ harmonic -> comb feedback (same tuned freq)
-// -> heat blend -> 4-pole tone LP -> limiter
+// input -> pitch tracker -> pitch-control smoothing -> AGC -> 3x parallel (resonator @ harmonic -> comb feedback)
+// -> per-path gain sum -> heat blend -> 4-pole tone LP -> limiter
 class PinchFxAlgorithm {
 public:
     struct Params {
         static constexpr double DEFAULT_TRIG = 0.0; // Manual trigger off.
         static constexpr double DEFAULT_POSITION = 0.5; // Middle harmonic selection.
+        static constexpr double DEFAULT_POSITION2 = 0.5; // Voice B harmonic selection.
+        static constexpr double DEFAULT_POSITION3 = 0.5; // Voice C harmonic selection.
         static constexpr double DEFAULT_LOCK = 0.1111111111111111; // Q default = 1.0 with current 0.5..5.0 mapping.
+        static constexpr double DEFAULT_LOCK2 = DEFAULT_LOCK; // Voice B Q default.
+        static constexpr double DEFAULT_LOCK3 = DEFAULT_LOCK; // Voice C Q default.
         static constexpr double DEFAULT_GLIDE = 0.25; // Tracker time-constant control.
         static constexpr double DEFAULT_TONE = 1.0; // Default fully open tone.
         static constexpr double DEFAULT_MIX = 0.35; // Preserve dry signal.
@@ -34,10 +38,19 @@ public:
         static constexpr double DEFAULT_HEAT = 0.0; // No added drive.
         static constexpr double DEFAULT_SENS = 0.5; // AGC drive trim neutral point.
         static constexpr double DEFAULT_FEEDBACK = 0.0; // Comb stage off by default.
+        static constexpr double DEFAULT_FEEDBACK2 = 0.0; // Voice B comb off by default.
+        static constexpr double DEFAULT_FEEDBACK3 = 0.0; // Voice C comb off by default.
+        static constexpr double DEFAULT_GAIN1 = 1.0; // Main voice on by default.
+        static constexpr double DEFAULT_GAIN2 = 0.0; // Extra voices off by default.
+        static constexpr double DEFAULT_GAIN3 = 0.0; // Extra voices off by default.
 
         double trig{DEFAULT_TRIG};
         double position{DEFAULT_POSITION};
+        double position2{DEFAULT_POSITION2};
+        double position3{DEFAULT_POSITION3};
         double lock{DEFAULT_LOCK};
+        double lock2{DEFAULT_LOCK2};
+        double lock3{DEFAULT_LOCK3};
         double glide{DEFAULT_GLIDE}; // Tracker response time.
         double tone{DEFAULT_TONE};
         double mix{DEFAULT_MIX};
@@ -46,6 +59,11 @@ public:
         double heat{DEFAULT_HEAT};
         double sens{DEFAULT_SENS}; // AGC drive trim control (0.5 = unity).
         double feedback{DEFAULT_FEEDBACK}; // Mini-comb feedback amount.
+        double feedback2{DEFAULT_FEEDBACK2}; // Voice B mini-comb feedback.
+        double feedback3{DEFAULT_FEEDBACK3}; // Voice C mini-comb feedback.
+        double gain1{DEFAULT_GAIN1}; // Voice A mix gain.
+        double gain2{DEFAULT_GAIN2}; // Voice B mix gain.
+        double gain3{DEFAULT_GAIN3}; // Voice C mix gain.
     };
 
     struct SampleOut {
@@ -79,9 +97,11 @@ public:
         pitchControl_.setTimeConstants(PITCH_CTRL_TAU_SLOW_SEC, PITCH_CTRL_TAU_FAST_SEC);
         pitchControl_.setMaxCentsPerSecond(PITCH_CTRL_MAX_CENTS_PER_SEC);
 
-        resonator_.setSampleRate(sampleRate_);
-        comb_.prepare(sampleRate_, COMB_MAX_DELAY_SECONDS);
-        comb_.setSampleRate(sampleRate_);
+        for (int i = 0; i < kPathCount; ++i) {
+            resonators_[i].setSampleRate(sampleRate_);
+            combs_[i].prepare(sampleRate_, COMB_MAX_DELAY_SECONDS);
+            combs_[i].setSampleRate(sampleRate_);
+        }
         toneLP_.setSampleRate(sampleRate_);
         toneLP2_.setSampleRate(sampleRate_);
         toneLP3_.setSampleRate(sampleRate_);
@@ -97,8 +117,10 @@ public:
     void reset() {
         pitchTracker_.reset();
         pitchControl_.reset();
-        resonator_.reset();
-        comb_.reset();
+        for (int i = 0; i < kPathCount; ++i) {
+            resonators_[i].reset();
+            combs_[i].reset();
+        }
         toneLP_.reset();
         toneLP2_.reset();
         toneLP3_.reset();
@@ -132,11 +154,6 @@ public:
         const bool trackerCanUpdate = estimateInRange && (conf >= MIN_CONFIDENCE_TRACK_UPDATE);
         const double fCtrl = pitchControl_.update(fHat, conf, trackerCanUpdate);
         f0Smoothed_ = std::clamp(fCtrl, MIN_PITCH_HZ, MAX_PITCH_HZ);
-        const double fh = static_cast<double>(partial_) * f0Smoothed_;
-        double fhFinal = std::clamp(fh, MIN_HARMONIC_HZ, MAX_HARMONIC_NYQUIST * sampleRate_);
-        if (!std::isfinite(fhFinal)) fhFinal = DEFAULT_F0_HZ;
-        resonator_.setFrequency(fhFinal);
-        comb_.setFrequency(fhFinal);
 
         const double absIn = std::abs(monoIn);
         const double agcEnvCoeff = (absIn > agcDetector_) ? agcEnvAttackCoeff_ : agcEnvReleaseCoeff_;
@@ -147,20 +164,41 @@ public:
         const double resonatorIn = std::clamp(monoIn * agcGain_ * AGC_DRIVE * agcDriveTrim_, -AGC_DRIVE_CLIP, AGC_DRIVE_CLIP);
         out.agc = resonatorIn;
 
-        const double xbpRaw = resonator_.process(resonatorIn);
-        out.xbpRaw = xbpRaw;
-        const double xbpNorm = (xbpRaw / std::max(MIN_Q_NORM, qValue_)) * RESONATOR_TRIM;
-        out.xbp = xbpNorm;
+        double xbpRawSum = 0.0;
+        double xbpNormSum = 0.0;
+        double resonatorWetSum = 0.0;
+        double fhOut = DEFAULT_F0_HZ;
+        for (int i = 0; i < kPathCount; ++i) {
+            const double fh = static_cast<double>(partials_[i]) * f0Smoothed_;
+            double fhFinal = std::clamp(fh, MIN_HARMONIC_HZ, MAX_HARMONIC_NYQUIST * sampleRate_);
+            if (!std::isfinite(fhFinal)) fhFinal = DEFAULT_F0_HZ;
+            if (i == 0) fhOut = fhFinal;
+
+            resonators_[i].setFrequency(fhFinal);
+            combs_[i].setFrequency(fhFinal);
+
+            const double xbpRaw = resonators_[i].process(resonatorIn);
+            const double xbpNorm = (xbpRaw / std::max(MIN_Q_NORM, qValues_[i])) * RESONATOR_TRIM;
+            const double resonatorOut = RESONATOR_OUTPUT_GAIN * xbpNorm;
+            const double voiceOut = combs_[i].process(resonatorOut);
+            const double gain = pathGains_[i];
+
+            xbpRawSum += gain * xbpRaw;
+            xbpNormSum += gain * xbpNorm;
+            resonatorWetSum += gain * voiceOut;
+        }
+
+        out.xbpRaw = xbpRawSum;
+        out.xbp = xbpNormSum;
         out.f0 = f0Smoothed_;
-        out.fh = fhFinal;
+        out.fh = fhOut;
         out.conf = conf;
         const double pitchRef = std::max(f0Smoothed_, MIN_VALID_F0_HZ);
         const double pitchError = estimateInRange ? std::abs(fHat - f0Smoothed_) / pitchRef : 1.0;
         const bool pitchGate = estimateInRange && (conf >= MIN_CONFIDENCE_GATE) && (pitchError <= PITCH_ERROR_RATIO_GATE);
         out.gate = pitchGate ? 1.0 : 0.0;
         out.pitchGate = out.gate;
-        const double resonatorOut = RESONATOR_OUTPUT_GAIN * out.xbp;
-        out.xr = comb_.process(resonatorOut); // Serial stage: resonator output feeds comb directly.
+        out.xr = resonatorWetSum;
         const double tubeOut = tubeStage_.process(out.xr);
         const double heatMix = std::clamp(params_.heat, 0.0, 1.0);
         out.xtube = out.xr + heatMix * (tubeOut - out.xr);
@@ -172,7 +210,7 @@ public:
         return out;
     }
 
-    double qValue() const { return qValue_; }
+    double qValue() const { return qValues_[0]; }
 
 private:
     static constexpr double DEFAULT_SAMPLE_RATE = 44100.0; // Fallback when host reports 0 Hz.
@@ -191,6 +229,7 @@ private:
     static constexpr double MIN_VALID_F0_HZ = 1.0; // Reject invalid tracker output.
     static constexpr double MAX_HARMONIC_NYQUIST = 0.45; // Keep SVF below Nyquist.
     static constexpr double MIN_HARMONIC_HZ = 30.0; // Avoid sub-audio center freqs.
+    static constexpr int kPathCount = 3; // Three parallel resonator/comb paths.
     static constexpr double RESONATOR_TRIM = 0.25; // Output trim after Q normalization.
     static constexpr double MIN_Q_NORM = 1.0; // Avoid divide-by-zero when normalizing.
     static constexpr double RESONATOR_OUTPUT_GAIN = 0.7; // Fixed output gain now that SQUEAL control is removed.
@@ -229,39 +268,53 @@ private:
     static constexpr double DEFAULT_TUBE_DRIVE = TUBE_DRIVE_BASE + TUBE_DRIVE_RANGE * Params::DEFAULT_HEAT; // Derived default drive.
     static constexpr double DEFAULT_TUBE_BIAS = TUBE_BIAS_BASE - TUBE_BIAS_RANGE * Params::DEFAULT_TONE; // Derived default bias.
     static constexpr double DEFAULT_AGC_DRIVE_TRIM = 1.0; // sens default (0.5) keeps AGC drive unchanged.
-    static constexpr double DEFAULT_COMB_FEEDBACK = Params::DEFAULT_FEEDBACK; // Derived default comb feedback.
+
+    int selectPartial_(double positionNorm) const {
+        static constexpr std::array<int, 6> PARTIALS{2, 5, 7, 9, 12, 15}; // Include octave partial plus pinch-focused upper partials.
+        const int posIndex = static_cast<int>(std::round(std::clamp(positionNorm, 0.0, 1.0) * POSITION_SCALE));
+        return PARTIALS[static_cast<size_t>(std::clamp(posIndex, 0, 5))];
+    }
 
     void updateDerived() {
-        const double lock = params_.lock;
         const double tone = params_.tone;
         const double heat = params_.heat;
         const double sens = std::clamp(params_.sens, 0.0, 1.0);
-        const double feedback = std::clamp(params_.feedback, 0.0, 1.0);
         const double glide = std::clamp(params_.glide, 0.0, 1.0);
         const double trackerScale = TRACKER_TC_SCALE_MIN + TRACKER_TC_SCALE_RANGE * glide;
         const double trackerTauSlow = PITCH_CTRL_TAU_SLOW_SEC * trackerScale;
         const double trackerTauFast = PITCH_CTRL_TAU_FAST_SEC * trackerScale;
         const double driveTrimDb = (sens - 0.5) * AGC_DRIVE_TRIM_DB_RANGE;
-
-        qValue_ = Q_MIN + Q_RANGE * lock;
         toneCutoff_ = TONE_CUTOFF_MIN + TONE_CUTOFF_RANGE * tone;
         tubeDrive_ = TUBE_DRIVE_BASE + TUBE_DRIVE_RANGE * heat;
         tubeBias_ = TUBE_BIAS_BASE - TUBE_BIAS_RANGE * tone;
         agcDriveTrim_ = std::pow(10.0, driveTrimDb / 20.0);
-        combFeedback_ = feedback;
 
-        static constexpr std::array<int, 6> PARTIALS{2, 5, 7, 9, 12, 15}; // Include octave partial plus pinch-focused upper partials.
-        const int posIndex = static_cast<int>(std::round(std::clamp(params_.position, 0.0, 1.0) * POSITION_SCALE));
-        partial_ = PARTIALS[static_cast<size_t>(std::clamp(posIndex, 0, 5))];
+        partials_[0] = selectPartial_(params_.position);
+        partials_[1] = selectPartial_(params_.position2);
+        partials_[2] = selectPartial_(params_.position3);
+
+        qValues_[0] = Q_MIN + Q_RANGE * std::clamp(params_.lock, 0.0, 1.0);
+        qValues_[1] = Q_MIN + Q_RANGE * std::clamp(params_.lock2, 0.0, 1.0);
+        qValues_[2] = Q_MIN + Q_RANGE * std::clamp(params_.lock3, 0.0, 1.0);
+
+        combFeedbacks_[0] = std::clamp(params_.feedback, 0.0, 1.0);
+        combFeedbacks_[1] = std::clamp(params_.feedback2, 0.0, 1.0);
+        combFeedbacks_[2] = std::clamp(params_.feedback3, 0.0, 1.0);
+
+        pathGains_[0] = std::clamp(params_.gain1, 0.0, 1.0);
+        pathGains_[1] = std::clamp(params_.gain2, 0.0, 1.0);
+        pathGains_[2] = std::clamp(params_.gain3, 0.0, 1.0);
 
         toneLP_.setCutoff(toneCutoff_);
         toneLP2_.setCutoff(toneCutoff_);
         toneLP3_.setCutoff(toneCutoff_);
         toneLP4_.setCutoff(toneCutoff_);
-        resonator_.setQ(qValue_);
-        comb_.setFeedback(combFeedback_);
-        comb_.setMix(1.0);
-        comb_.setDamping(COMB_DAMPING);
+        for (int i = 0; i < kPathCount; ++i) {
+            resonators_[i].setQ(qValues_[i]);
+            combs_[i].setFeedback(combFeedbacks_[i]);
+            combs_[i].setMix(1.0);
+            combs_[i].setDamping(COMB_DAMPING);
+        }
         pitchControl_.setTimeConstants(trackerTauSlow, trackerTauFast);
         tubeStage_.setDrive(tubeDrive_);
         tubeStage_.setBias(tubeBias_);
@@ -282,8 +335,8 @@ private:
 
     PitchTrackerACF pitchTracker_{};
     PitchTrackerAlgo pitchControl_{};
-    TwoPoleResonator resonator_{};
-    MiniComb comb_{};
+    std::array<TwoPoleResonator, kPathCount> resonators_{};
+    std::array<MiniComb, kPathCount> combs_{};
     OnePoleLP toneLP_{};
     OnePoleLP toneLP2_{};
     OnePoleLP toneLP3_{};
@@ -294,7 +347,7 @@ private:
     double sampleRate_{DEFAULT_SAMPLE_RATE};
     int maxBlock_{0};
     int trigWindowSamples_{static_cast<int>(TRIG_WINDOW_REF_SAMPLES)};
-    int partial_{5};
+    std::array<int, kPathCount> partials_{5, 5, 5};
 
     double f0Smoothed_{DEFAULT_F0_HZ};
     double agcDetector_{0.0};
@@ -304,12 +357,13 @@ private:
     double agcGainAttackCoeff_{0.0};
     double agcGainReleaseCoeff_{0.0};
 
-    double qValue_{DEFAULT_Q_VALUE};
+    std::array<double, kPathCount> qValues_{DEFAULT_Q_VALUE, DEFAULT_Q_VALUE, DEFAULT_Q_VALUE};
+    std::array<double, kPathCount> combFeedbacks_{Params::DEFAULT_FEEDBACK, Params::DEFAULT_FEEDBACK2, Params::DEFAULT_FEEDBACK3};
+    std::array<double, kPathCount> pathGains_{Params::DEFAULT_GAIN1, Params::DEFAULT_GAIN2, Params::DEFAULT_GAIN3};
     double toneCutoff_{DEFAULT_TONE_CUTOFF};
     double tubeDrive_{DEFAULT_TUBE_DRIVE};
     double tubeBias_{DEFAULT_TUBE_BIAS};
     double agcDriveTrim_{DEFAULT_AGC_DRIVE_TRIM};
-    double combFeedback_{DEFAULT_COMB_FEEDBACK};
 };
 
 } // namespace pinchfx::dsp
