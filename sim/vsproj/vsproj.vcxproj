@@ -136,11 +136,12 @@
     <ClInclude Include="..\..\vst3\src\dsp\OnePoleLP.h" />
     <ClInclude Include="..\..\vst3\src\dsp\Oversampler2x.h" />
     <ClInclude Include="..\..\vst3\src\dsp\PeakLimiter.h" />
+    <ClInclude Include="..\..\vst3\src\PinchFxPartials.h" />
     <ClInclude Include="..\..\vst3\src\dsp\PinchFxAlgorithm.h" />
     <ClInclude Include="..\..\vst3\src\dsp\PitchTrackerACF.h" />
     <ClInclude Include="..\..\vst3\src\dsp\PitchTrackerAlgo.h" />
     <ClInclude Include="..\..\vst3\src\dsp\TubeStage.h" />
-    <ClInclude Include="..\..\vst3\src\dsp\TwoPoleResonator.h" />
+    <ClInclude Include="..\..\vst3\src\dsp\TwoPoleControlledResonator.h" />
     <ClInclude Include="..\src\PinchFxSimProcessor.h" />
     <ClInclude Include="..\src\SimIO.h" />
     <ClInclude Include="..\src\SimScope.h" />

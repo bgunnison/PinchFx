@@ -7,6 +7,7 @@
 #include "SimIO.h"
 #include "PinchFxSimProcessor.h"
 #include "SimScope.h"
+#include "../../vst3/src/PinchFxPartials.h"
 
 // #define SAMPLE_WAV "C:\\projects\\ableplugs\\pinchfx\\sim\\pluck.wav"
 // #define SAMPLE_WAV "C:\\projects\\ableplugs\\pinchfx\\sim\\cleanchords.wav"
@@ -88,9 +89,6 @@ constexpr int kIdLock3 = 1017;
 constexpr int kIdGain3 = 1018;
 
 constexpr float kResDefault = 0.1111111111111111f;
-constexpr float kQMin = 0.5f;
-constexpr float kQMax = 5.0f;
-constexpr float kQRange = kQMax - kQMin;
 constexpr float kInputGainBoost = 10.0f;
 
 constexpr SliderSpec kSliders[] = {
@@ -148,7 +146,7 @@ void updateResLabel(int groupIndex, float resValue) {
     if (groupIndex < 0 || groupIndex > 2) return;
     HWND label = gResLabels[groupIndex];
     if (!label) return;
-    const float qValue = kQMin + kQRange * std::min(1.0f, std::max(0.0f, resValue));
+    const float qValue = std::min(1.0f, std::max(0.0f, resValue));
     char text[32]{};
     std::snprintf(text, sizeof(text), "%c RES %.2f", static_cast<char>('A' + groupIndex), qValue);
     SetWindowText(label, text);
@@ -158,10 +156,7 @@ void updatePositionLabel(int groupIndex, float positionValue) {
     if (groupIndex < 0 || groupIndex > 2) return;
     HWND label = gPositionLabels[groupIndex];
     if (!label) return;
-    static constexpr int kPartials[6] = {2, 5, 7, 9, 12, 15};
-    const float clamped = std::min(1.0f, std::max(0.0f, positionValue));
-    const int index = static_cast<int>(std::round(clamped * 5.0f));
-    const int partial = kPartials[std::clamp(index, 0, 5)];
+    const int partial = pinchfx::partialFromNormalized(positionValue);
     char text[48]{};
     std::snprintf(text, sizeof(text), "%c PARTIAL: %d", static_cast<char>('A' + groupIndex), partial);
     SetWindowText(label, text);

@@ -41,7 +41,16 @@ enum ParamIDs : Steinberg::Vst::ParamID {
     kParamMonitor,
     kParamMode,
     kParamHeat,
-    kParamSens
+    kParamSens,
+    kParamGain1,
+    kParamPosition2,
+    kParamFeedback2,
+    kParamLock2,
+    kParamGain2,
+    kParamPosition3,
+    kParamFeedback3,
+    kParamLock3,
+    kParamGain3
 };
 
 } // namespace pinchfx

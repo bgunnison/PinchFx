@@ -38,6 +38,9 @@
     <ClInclude Include="..\..\vst3\src\dsp\PeakLimiter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\vst3\src\PinchFxPartials.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\vst3\src\dsp\PinchFxAlgorithm.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -50,7 +53,7 @@
     <ClInclude Include="..\..\vst3\src\dsp\TubeStage.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\vst3\src\dsp\TwoPoleResonator.h">
+    <ClInclude Include="..\..\vst3\src\dsp\TwoPoleControlledResonator.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\SimScope.h">

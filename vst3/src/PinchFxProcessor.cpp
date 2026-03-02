@@ -107,7 +107,16 @@ void PinchFxProcessor::buildParamOrder() {
     paramOrder_.push_back(kParamMonitor);
     paramOrder_.push_back(kParamMode); // Hidden legacy slot for state compatibility.
     paramOrder_.push_back(kParamHeat);
-    paramOrder_.push_back(kParamSens); // Hidden legacy slot for state compatibility.
+    paramOrder_.push_back(kParamSens); // INPUT control.
+    paramOrder_.push_back(kParamGain1);
+    paramOrder_.push_back(kParamPosition2);
+    paramOrder_.push_back(kParamFeedback2);
+    paramOrder_.push_back(kParamLock2);
+    paramOrder_.push_back(kParamGain2);
+    paramOrder_.push_back(kParamPosition3);
+    paramOrder_.push_back(kParamFeedback3);
+    paramOrder_.push_back(kParamLock3);
+    paramOrder_.push_back(kParamGain3);
 
     paramState_.clear();
     for (auto pid : paramOrder_) {
@@ -128,6 +137,15 @@ ParamValue PinchFxProcessor::defaultNormalized(ParamID pid) const {
         case kParamMode: return 0.0;
         case kParamHeat: return 0.0;
         case kParamSens: return 0.5;
+        case kParamGain1: return 1.0;
+        case kParamPosition2: return 0.5;
+        case kParamFeedback2: return 0.0;
+        case kParamLock2: return 0.1111111111111111;
+        case kParamGain2: return 0.0;
+        case kParamPosition3: return 0.5;
+        case kParamFeedback3: return 0.0;
+        case kParamLock3: return 0.1111111111111111;
+        case kParamGain3: return 0.0;
         default: break;
     }
     return 0.0;
@@ -179,6 +197,15 @@ void PinchFxProcessor::applyNormalizedParam(ParamID pid, ParamValue value) {
         case kParamTrig: params_.trig = value; break;
         case kParamPosition: params_.position = value; break;
         case kParamSqueal: params_.feedback = value; break;
+        case kParamGain1: params_.gain1 = value; break;
+        case kParamPosition2: params_.position2 = value; break;
+        case kParamFeedback2: params_.feedback2 = value; break;
+        case kParamLock2: params_.lock2 = value; break;
+        case kParamGain2: params_.gain2 = value; break;
+        case kParamPosition3: params_.position3 = value; break;
+        case kParamFeedback3: params_.feedback3 = value; break;
+        case kParamLock3: params_.lock3 = value; break;
+        case kParamGain3: params_.gain3 = value; break;
         case kParamLock: params_.lock = value; break;
         case kParamGlide: params_.glide = value; break;
         case kParamTone: params_.tone = value; break;

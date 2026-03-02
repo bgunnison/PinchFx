@@ -5,7 +5,8 @@
 
 #include "PitchTrackerACF.h"
 #include "PitchTrackerAlgo.h"
-#include "TwoPoleResonator.h"
+#include "../PinchFxPartials.h"
+#include "TwoPoleControlledResonator.h"
 #include "MiniComb.h"
 #include "OnePoleLP.h"
 #include "TubeStage.h"
@@ -27,9 +28,9 @@ public:
         static constexpr double DEFAULT_POSITION = 0.5; // Middle harmonic selection.
         static constexpr double DEFAULT_POSITION2 = 0.5; // Voice B harmonic selection.
         static constexpr double DEFAULT_POSITION3 = 0.5; // Voice C harmonic selection.
-        static constexpr double DEFAULT_LOCK = 0.1111111111111111; // Q default = 1.0 with current 0.5..5.0 mapping.
-        static constexpr double DEFAULT_LOCK2 = DEFAULT_LOCK; // Voice B Q default.
-        static constexpr double DEFAULT_LOCK3 = DEFAULT_LOCK; // Voice C Q default.
+        static constexpr double DEFAULT_LOCK = 0.1111111111111111; // Resonance control in normalized 0..1 space.
+        static constexpr double DEFAULT_LOCK2 = DEFAULT_LOCK; // Voice B resonance default.
+        static constexpr double DEFAULT_LOCK3 = DEFAULT_LOCK; // Voice C resonance default.
         static constexpr double DEFAULT_GLIDE = 0.25; // Tracker time-constant control.
         static constexpr double DEFAULT_TONE = 1.0; // Default fully open tone.
         static constexpr double DEFAULT_MIX = 0.35; // Preserve dry signal.
@@ -178,7 +179,7 @@ public:
             combs_[i].setFrequency(fhFinal);
 
             const double xbpRaw = resonators_[i].process(resonatorIn);
-            const double xbpNorm = (xbpRaw / std::max(MIN_Q_NORM, qValues_[i])) * RESONATOR_TRIM;
+            const double xbpNorm = xbpRaw * RESONATOR_TRIM;
             const double resonatorOut = RESONATOR_OUTPUT_GAIN * xbpNorm;
             const double voiceOut = combs_[i].process(resonatorOut);
             const double gain = pathGains_[i];
@@ -230,8 +231,7 @@ private:
     static constexpr double MAX_HARMONIC_NYQUIST = 0.45; // Keep SVF below Nyquist.
     static constexpr double MIN_HARMONIC_HZ = 30.0; // Avoid sub-audio center freqs.
     static constexpr int kPathCount = 3; // Three parallel resonator/comb paths.
-    static constexpr double RESONATOR_TRIM = 0.25; // Output trim after Q normalization.
-    static constexpr double MIN_Q_NORM = 1.0; // Avoid divide-by-zero when normalizing.
+    static constexpr double RESONATOR_TRIM = 0.25; // Output trim after resonator stage.
     static constexpr double RESONATOR_OUTPUT_GAIN = 0.7; // Fixed output gain now that SQUEAL control is removed.
     static constexpr double PITCH_CTRL_TAU_SLOW_SEC = 0.20; // Base slow f0 response when confidence is weak.
     static constexpr double PITCH_CTRL_TAU_FAST_SEC = 0.01; // Base fast f0 response when confidence is strong.
@@ -239,15 +239,12 @@ private:
     static constexpr double TRACKER_TC_SCALE_MIN = 0.4; // Fastest tracker setting.
     static constexpr double TRACKER_TC_SCALE_RANGE = 2.6; // Slowest setting is 3x base tau.
     static constexpr double MIN_CONFIDENCE_TRACK_UPDATE = 0.25; // Freeze F0 below this confidence.
-    static constexpr double Q_MIN = 0.5; // Minimum resonator Q.
-    static constexpr double Q_RANGE = 4.5; // Q range up to 5.0.
     static constexpr double TONE_CUTOFF_MIN = 250.0; // Darker minimum so tone control has clear effect.
     static constexpr double TONE_CUTOFF_RANGE = 11750.0; // Sweep up to 12 kHz.
     static constexpr double TUBE_DRIVE_BASE = 1.0; // Neutral drive at heat=0.
     static constexpr double TUBE_DRIVE_RANGE = 7.0; // Heat adds up to 8x.
     static constexpr double TUBE_BIAS_BASE = 0.18; // Slight asymmetry for bite.
     static constexpr double TUBE_BIAS_RANGE = 0.16; // Tone reduces asymmetry.
-    static constexpr double POSITION_SCALE = 5.0; // Map 0..1 position to 6 discrete harmonics.
     static constexpr double MIN_CONFIDENCE_GATE = 0.2; // Gate trace threshold for "pitch is trustworthy".
     static constexpr double PITCH_ERROR_RATIO_GATE = 0.08; // Gate trace tolerance for estimate deviation.
     static constexpr double AGC_TARGET_LEVEL = 0.2; // Target absolute level driving resonator.
@@ -263,16 +260,14 @@ private:
     static constexpr double AGC_DRIVE_TRIM_DB_RANGE = 40.0; // sens maps to -20..+20 dB around unity.
     static constexpr double COMB_MAX_DELAY_SECONDS = 0.2; // Supports low tuning frequencies without wrap.
     static constexpr double COMB_DAMPING = 0.35; // Prevents harsh high-frequency buildup.
-    static constexpr double DEFAULT_Q_VALUE = Q_MIN + Q_RANGE * Params::DEFAULT_LOCK; // Derived default Q.
+    static constexpr double DEFAULT_Q_VALUE = Params::DEFAULT_LOCK; // Resonance is already normalized 0..1.
     static constexpr double DEFAULT_TONE_CUTOFF = TONE_CUTOFF_MIN + TONE_CUTOFF_RANGE * Params::DEFAULT_TONE; // Derived default tone cutoff.
     static constexpr double DEFAULT_TUBE_DRIVE = TUBE_DRIVE_BASE + TUBE_DRIVE_RANGE * Params::DEFAULT_HEAT; // Derived default drive.
     static constexpr double DEFAULT_TUBE_BIAS = TUBE_BIAS_BASE - TUBE_BIAS_RANGE * Params::DEFAULT_TONE; // Derived default bias.
     static constexpr double DEFAULT_AGC_DRIVE_TRIM = 1.0; // sens default (0.5) keeps AGC drive unchanged.
 
     int selectPartial_(double positionNorm) const {
-        static constexpr std::array<int, 6> PARTIALS{2, 5, 7, 9, 12, 15}; // Include octave partial plus pinch-focused upper partials.
-        const int posIndex = static_cast<int>(std::round(std::clamp(positionNorm, 0.0, 1.0) * POSITION_SCALE));
-        return PARTIALS[static_cast<size_t>(std::clamp(posIndex, 0, 5))];
+        return pinchfx::partialFromNormalized(positionNorm);
     }
 
     void updateDerived() {
@@ -293,9 +288,9 @@ private:
         partials_[1] = selectPartial_(params_.position2);
         partials_[2] = selectPartial_(params_.position3);
 
-        qValues_[0] = Q_MIN + Q_RANGE * std::clamp(params_.lock, 0.0, 1.0);
-        qValues_[1] = Q_MIN + Q_RANGE * std::clamp(params_.lock2, 0.0, 1.0);
-        qValues_[2] = Q_MIN + Q_RANGE * std::clamp(params_.lock3, 0.0, 1.0);
+        qValues_[0] = std::clamp(params_.lock, 0.0, 1.0);
+        qValues_[1] = std::clamp(params_.lock2, 0.0, 1.0);
+        qValues_[2] = std::clamp(params_.lock3, 0.0, 1.0);
 
         combFeedbacks_[0] = std::clamp(params_.feedback, 0.0, 1.0);
         combFeedbacks_[1] = std::clamp(params_.feedback2, 0.0, 1.0);
