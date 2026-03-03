@@ -35,20 +35,20 @@ namespace {
 struct SharedParams {
     std::atomic<float> inputGain{0.5f};
     std::atomic<float> position1{0.5f};
-    std::atomic<float> lock1{0.1111111111111111f};
+    std::atomic<float> lock1{0.0f};
     std::atomic<float> feedback1{0.0f};
     std::atomic<float> gain1{1.0f};
     std::atomic<float> position2{0.5f};
-    std::atomic<float> lock2{0.1111111111111111f};
+    std::atomic<float> lock2{0.0f};
     std::atomic<float> feedback2{0.0f};
     std::atomic<float> gain2{0.0f};
     std::atomic<float> position3{0.5f};
-    std::atomic<float> lock3{0.1111111111111111f};
+    std::atomic<float> lock3{0.0f};
     std::atomic<float> feedback3{0.0f};
     std::atomic<float> gain3{0.0f};
     std::atomic<float> glide{0.25f};
     std::atomic<float> tone{1.0f};
-    std::atomic<float> mix{0.35f};
+    std::atomic<float> mix{1.0f};
     std::atomic<float> heat{0.0f};
     std::atomic<bool> mute{false};
 };
@@ -88,7 +88,7 @@ constexpr int kIdFeedback3 = 1016;
 constexpr int kIdLock3 = 1017;
 constexpr int kIdGain3 = 1018;
 
-constexpr float kResDefault = 0.1111111111111111f;
+constexpr float kResDefault = 0.0f;
 constexpr float kInputGainBoost = 10.0f;
 
 constexpr SliderSpec kSliders[] = {
@@ -108,7 +108,7 @@ constexpr SliderSpec kSliders[] = {
     {"C GAIN", kIdGain3, kTopMargin + 13 * kRowHeight, 0, 1000, 0.0f},
     {"HEAT", kIdHeat, kTopMargin + 14 * kRowHeight, 0, 1000, 0.0f},
     {"TONE", kIdTone, kTopMargin + 15 * kRowHeight, 0, 1000, 1.0f},
-    {"WET/DRY", kIdMix, kTopMargin + 16 * kRowHeight, 0, 1000, 0.35f},
+    {"WET/DRY", kIdMix, kTopMargin + 16 * kRowHeight, 0, 1000, 1.0f},
 };
 
 struct AudioState {

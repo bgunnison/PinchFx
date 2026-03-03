@@ -129,10 +129,10 @@ ParamValue PinchFxProcessor::defaultNormalized(ParamID pid) const {
         case kParamTrig: return 0.0;
         case kParamPosition: return 0.5;
         case kParamSqueal: return 0.0;
-        case kParamLock: return 0.1111111111111111;
+        case kParamLock: return 0.0;
         case kParamGlide: return 0.25;
         case kParamTone: return 1.0;
-        case kParamMix: return 0.35;
+        case kParamMix: return 1.0;
         case kParamMonitor: return 0.0;
         case kParamMode: return 0.0;
         case kParamHeat: return 0.0;
@@ -140,11 +140,11 @@ ParamValue PinchFxProcessor::defaultNormalized(ParamID pid) const {
         case kParamGain1: return 1.0;
         case kParamPosition2: return 0.5;
         case kParamFeedback2: return 0.0;
-        case kParamLock2: return 0.1111111111111111;
+        case kParamLock2: return 0.0;
         case kParamGain2: return 0.0;
         case kParamPosition3: return 0.5;
         case kParamFeedback3: return 0.0;
-        case kParamLock3: return 0.1111111111111111;
+        case kParamLock3: return 0.0;
         case kParamGain3: return 0.0;
         default: break;
     }

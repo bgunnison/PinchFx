@@ -28,12 +28,12 @@ public:
         static constexpr double DEFAULT_POSITION = 0.5; // Middle harmonic selection.
         static constexpr double DEFAULT_POSITION2 = 0.5; // Voice B harmonic selection.
         static constexpr double DEFAULT_POSITION3 = 0.5; // Voice C harmonic selection.
-        static constexpr double DEFAULT_LOCK = 0.1111111111111111; // Resonance control in normalized 0..1 space.
+        static constexpr double DEFAULT_LOCK = 0.0; // Resonance control in normalized 0..1 space.
         static constexpr double DEFAULT_LOCK2 = DEFAULT_LOCK; // Voice B resonance default.
         static constexpr double DEFAULT_LOCK3 = DEFAULT_LOCK; // Voice C resonance default.
         static constexpr double DEFAULT_GLIDE = 0.25; // Tracker time-constant control.
         static constexpr double DEFAULT_TONE = 1.0; // Default fully open tone.
-        static constexpr double DEFAULT_MIX = 0.35; // Preserve dry signal.
+        static constexpr double DEFAULT_MIX = 1.0; // Full wet by default.
         static constexpr double DEFAULT_MONITOR = 0.0; // Monitor off.
         static constexpr double DEFAULT_MODE = 0.0; // Legacy state slot (unused).
         static constexpr double DEFAULT_HEAT = 0.0; // No added drive.
