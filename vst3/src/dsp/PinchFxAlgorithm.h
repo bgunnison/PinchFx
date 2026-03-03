@@ -131,6 +131,9 @@ public:
         f0Smoothed_ = DEFAULT_F0_HZ;
         agcDetector_ = 0.0;
         agcGain_ = 1.0;
+        wetMatchDryEnv_ = 0.0;
+        wetMatchWetEnv_ = 0.0;
+        wetMatchGain_ = 1.0;
     }
 
     void setParams(const Params& params) {
@@ -157,6 +160,8 @@ public:
         f0Smoothed_ = std::clamp(fCtrl, MIN_PITCH_HZ, MAX_PITCH_HZ);
 
         const double absIn = std::abs(monoIn);
+        const double dryEnvCoeff = (absIn > wetMatchDryEnv_) ? wetMatchDryAttackCoeff_ : wetMatchDryReleaseCoeff_;
+        wetMatchDryEnv_ += dryEnvCoeff * (absIn - wetMatchDryEnv_);
         const double agcEnvCoeff = (absIn > agcDetector_) ? agcEnvAttackCoeff_ : agcEnvReleaseCoeff_;
         agcDetector_ += agcEnvCoeff * (absIn - agcDetector_);
         const double desiredGain = std::clamp(AGC_TARGET_LEVEL / std::max(agcDetector_, AGC_INPUT_FLOOR), AGC_MIN_GAIN, AGC_MAX_GAIN);
@@ -207,7 +212,17 @@ public:
         const double t2 = toneLP2_.process(t1);
         const double t3 = toneLP3_.process(t2);
         out.xtone = toneLP4_.process(t3);
-        out.xlim = limiter_.process(out.xtone);
+
+        const double wetAbs = std::abs(out.xtone);
+        const double wetEnvCoeff = (wetAbs > wetMatchWetEnv_) ? wetMatchWetAttackCoeff_ : wetMatchWetReleaseCoeff_;
+        wetMatchWetEnv_ += wetEnvCoeff * (wetAbs - wetMatchWetEnv_);
+        const double desiredWetMatchGain = std::clamp(
+            (WET_MATCH_DRY_TARGET * wetMatchDryEnv_ + WET_MATCH_ENV_FLOOR) / std::max(wetMatchWetEnv_, WET_MATCH_ENV_FLOOR),
+            WET_MATCH_MIN_GAIN, WET_MATCH_MAX_GAIN);
+        const double wetMatchGainCoeff = (desiredWetMatchGain < wetMatchGain_) ? wetMatchGainDownCoeff_ : wetMatchGainUpCoeff_;
+        wetMatchGain_ += wetMatchGainCoeff * (desiredWetMatchGain - wetMatchGain_);
+
+        out.xlim = limiter_.process(out.xtone * wetMatchGain_);
         return out;
     }
 
@@ -258,6 +273,16 @@ private:
     static constexpr double AGC_DRIVE = 1.0; // Resonator drive scalar.
     static constexpr double AGC_DRIVE_CLIP = 2.0; // Clip drive to keep resonator bounded.
     static constexpr double AGC_DRIVE_TRIM_DB_RANGE = 40.0; // sens maps to -20..+20 dB around unity.
+    static constexpr double WET_MATCH_DRY_TARGET = 0.9; // Target wet envelope relative to dry envelope.
+    static constexpr double WET_MATCH_ENV_FLOOR = 0.0005; // Avoid runaway gain in near-silence.
+    static constexpr double WET_MATCH_MIN_GAIN = 0.08; // Keep wet path audible when tracker/reactivity dips.
+    static constexpr double WET_MATCH_MAX_GAIN = 12.0; // Allow make-up for weak resonator output without overload.
+    static constexpr double WET_MATCH_DRY_ATTACK_MS = 2.0; // Track dry transients quickly.
+    static constexpr double WET_MATCH_DRY_RELEASE_MS = 120.0; // Hold dry reference through note decay.
+    static constexpr double WET_MATCH_WET_ATTACK_MS = 2.0; // Catch wet spikes quickly.
+    static constexpr double WET_MATCH_WET_RELEASE_MS = 120.0; // Smooth wet reference for stable balancing.
+    static constexpr double WET_MATCH_GAIN_UP_MS = 35.0; // Slow upward gain moves to avoid pumping.
+    static constexpr double WET_MATCH_GAIN_DOWN_MS = 3.0; // Fast downward moves to tame oscillation bursts.
     static constexpr double COMB_MAX_DELAY_SECONDS = 0.2; // Supports low tuning frequencies without wrap.
     static constexpr double COMB_DAMPING = 0.35; // Prevents harsh high-frequency buildup.
     static constexpr double DEFAULT_Q_VALUE = Params::DEFAULT_LOCK; // Resonance is already normalized 0..1.
@@ -320,10 +345,22 @@ private:
         const double envReleaseSec = AGC_ENV_RELEASE_MS * 0.001;
         const double gainAttackSec = AGC_GAIN_ATTACK_MS * 0.001;
         const double gainReleaseSec = AGC_GAIN_RELEASE_MS * 0.001;
+        const double wetDryAttackSec = WET_MATCH_DRY_ATTACK_MS * 0.001;
+        const double wetDryReleaseSec = WET_MATCH_DRY_RELEASE_MS * 0.001;
+        const double wetWetAttackSec = WET_MATCH_WET_ATTACK_MS * 0.001;
+        const double wetWetReleaseSec = WET_MATCH_WET_RELEASE_MS * 0.001;
+        const double wetGainUpSec = WET_MATCH_GAIN_UP_MS * 0.001;
+        const double wetGainDownSec = WET_MATCH_GAIN_DOWN_MS * 0.001;
         agcEnvAttackCoeff_ = 1.0 - std::exp(-1.0 / (envAttackSec * sampleRate_));
         agcEnvReleaseCoeff_ = 1.0 - std::exp(-1.0 / (envReleaseSec * sampleRate_));
         agcGainAttackCoeff_ = 1.0 - std::exp(-1.0 / (gainAttackSec * sampleRate_));
         agcGainReleaseCoeff_ = 1.0 - std::exp(-1.0 / (gainReleaseSec * sampleRate_));
+        wetMatchDryAttackCoeff_ = 1.0 - std::exp(-1.0 / (wetDryAttackSec * sampleRate_));
+        wetMatchDryReleaseCoeff_ = 1.0 - std::exp(-1.0 / (wetDryReleaseSec * sampleRate_));
+        wetMatchWetAttackCoeff_ = 1.0 - std::exp(-1.0 / (wetWetAttackSec * sampleRate_));
+        wetMatchWetReleaseCoeff_ = 1.0 - std::exp(-1.0 / (wetWetReleaseSec * sampleRate_));
+        wetMatchGainUpCoeff_ = 1.0 - std::exp(-1.0 / (wetGainUpSec * sampleRate_));
+        wetMatchGainDownCoeff_ = 1.0 - std::exp(-1.0 / (wetGainDownSec * sampleRate_));
     }
 
     Params params_{};
@@ -351,6 +388,15 @@ private:
     double agcEnvReleaseCoeff_{0.0};
     double agcGainAttackCoeff_{0.0};
     double agcGainReleaseCoeff_{0.0};
+    double wetMatchDryEnv_{0.0};
+    double wetMatchWetEnv_{0.0};
+    double wetMatchGain_{1.0};
+    double wetMatchDryAttackCoeff_{0.0};
+    double wetMatchDryReleaseCoeff_{0.0};
+    double wetMatchWetAttackCoeff_{0.0};
+    double wetMatchWetReleaseCoeff_{0.0};
+    double wetMatchGainUpCoeff_{0.0};
+    double wetMatchGainDownCoeff_{0.0};
 
     std::array<double, kPathCount> qValues_{DEFAULT_Q_VALUE, DEFAULT_Q_VALUE, DEFAULT_Q_VALUE};
     std::array<double, kPathCount> combFeedbacks_{Params::DEFAULT_FEEDBACK, Params::DEFAULT_FEEDBACK2, Params::DEFAULT_FEEDBACK3};

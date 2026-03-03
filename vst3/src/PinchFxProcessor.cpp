@@ -20,7 +20,7 @@ using namespace Steinberg::Vst;
 namespace {
 
 constexpr double kPi = 3.14159265358979323846;
-constexpr double kWetMakeup = 1.8; // Compensate lower wet-path level so WET/DRY balance is usable.
+constexpr double kWetMakeup = 1.0; // Wet level now auto-matched in DSP via output AGC.
 
 void writeOutputSilence(ProcessData& data) {
     for (int32 bus = 0; bus < data.numOutputs; ++bus) {
