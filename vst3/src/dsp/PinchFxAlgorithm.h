@@ -205,15 +205,10 @@ public:
         out.gate = pitchGate ? 1.0 : 0.0;
         out.pitchGate = out.gate;
         out.xr = resonatorWetSum;
-        const double tubeOut = tubeStage_.process(out.xr);
-        const double heatMix = std::clamp(params_.heat, 0.0, 1.0);
-        out.xtube = out.xr + heatMix * (tubeOut - out.xr);
-        const double t1 = toneLP_.process(out.xtube);
-        const double t2 = toneLP2_.process(t1);
-        const double t3 = toneLP3_.process(t2);
-        out.xtone = toneLP4_.process(t3);
 
-        const double wetAbs = std::abs(out.xtone);
+        // Match resonator level toward dry level before the coloration stages,
+        // so HEAT/TONE still have an audible effect.
+        const double wetAbs = std::abs(out.xr);
         const double wetEnvCoeff = (wetAbs > wetMatchWetEnv_) ? wetMatchWetAttackCoeff_ : wetMatchWetReleaseCoeff_;
         wetMatchWetEnv_ += wetEnvCoeff * (wetAbs - wetMatchWetEnv_);
         const double desiredWetMatchGain = std::clamp(
@@ -222,7 +217,15 @@ public:
         const double wetMatchGainCoeff = (desiredWetMatchGain < wetMatchGain_) ? wetMatchGainDownCoeff_ : wetMatchGainUpCoeff_;
         wetMatchGain_ += wetMatchGainCoeff * (desiredWetMatchGain - wetMatchGain_);
 
-        out.xlim = limiter_.process(out.xtone * wetMatchGain_);
+        const double resonatorMatched = out.xr * wetMatchGain_;
+        const double tubeOut = tubeStage_.process(resonatorMatched);
+        const double heatMix = std::clamp(params_.heat, 0.0, 1.0);
+        out.xtube = resonatorMatched + heatMix * (tubeOut - resonatorMatched);
+        const double t1 = toneLP_.process(out.xtube);
+        const double t2 = toneLP2_.process(t1);
+        const double t3 = toneLP3_.process(t2);
+        out.xtone = toneLP4_.process(t3);
+        out.xlim = limiter_.process(out.xtone);
         return out;
     }
 
