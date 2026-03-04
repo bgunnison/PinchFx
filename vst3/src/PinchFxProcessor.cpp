@@ -3,12 +3,14 @@
 #include "PinchFxProcessor.h"
 
 #include "PinchFxController.h"
+#include "PinchFxDefaults.h"
 
 #include "base/source/fstreamer.h"
 #include "pluginterfaces/vst/ivstparameterchanges.h"
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 #ifdef PINCHFX_DEBUG_NAME
 #include <fstream>
 #endif
@@ -21,6 +23,7 @@ namespace {
 
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kWetMakeup = 1.0; // Wet level now auto-matched in DSP via output AGC.
+constexpr size_t kLegacyStateValueCount = 20;
 
 void writeOutputSilence(ProcessData& data) {
     for (int32 bus = 0; bus < data.numOutputs; ++bus) {
@@ -85,7 +88,6 @@ Steinberg::tresult PLUGIN_API PinchFxProcessor::setupProcessing(ProcessSetup& se
 Steinberg::tresult PLUGIN_API PinchFxProcessor::setActive(TBool state) {
     if (state) {
         algorithm_.reset();
-        lastTrigValue_ = 0.0;
     }
     return AudioEffect::setActive(state);
 }
@@ -97,15 +99,12 @@ Steinberg::tresult PLUGIN_API PinchFxProcessor::canProcessSampleSize(int32 symbo
 
 void PinchFxProcessor::buildParamOrder() {
     paramOrder_.clear();
-    paramOrder_.push_back(kParamTrig);
     paramOrder_.push_back(kParamPosition);
     paramOrder_.push_back(kParamSqueal); // FEEDBACK control (reuses legacy slot).
     paramOrder_.push_back(kParamLock);
     paramOrder_.push_back(kParamGlide); // Tracker time-constant control.
     paramOrder_.push_back(kParamTone);
     paramOrder_.push_back(kParamMix);
-    paramOrder_.push_back(kParamMonitor);
-    paramOrder_.push_back(kParamMode); // Hidden legacy slot for state compatibility.
     paramOrder_.push_back(kParamHeat);
     paramOrder_.push_back(kParamSens); // INPUT control.
     paramOrder_.push_back(kParamGain1);
@@ -126,26 +125,23 @@ void PinchFxProcessor::buildParamOrder() {
 
 ParamValue PinchFxProcessor::defaultNormalized(ParamID pid) const {
     switch (pid) {
-        case kParamTrig: return 0.0;
-        case kParamPosition: return 0.5;
-        case kParamSqueal: return 0.0;
-        case kParamLock: return 0.0;
-        case kParamGlide: return 0.25;
-        case kParamTone: return 1.0;
-        case kParamMix: return 1.0;
-        case kParamMonitor: return 0.0;
-        case kParamMode: return 0.0;
-        case kParamHeat: return 0.0;
-        case kParamSens: return 0.5;
-        case kParamGain1: return 1.0;
-        case kParamPosition2: return 0.5;
-        case kParamFeedback2: return 0.0;
-        case kParamLock2: return 0.0;
-        case kParamGain2: return 0.0;
-        case kParamPosition3: return 0.5;
-        case kParamFeedback3: return 0.0;
-        case kParamLock3: return 0.0;
-        case kParamGain3: return 0.0;
+        case kParamPosition: return kDefaultPartialA;
+        case kParamSqueal: return kDefaultFeedbackA;
+        case kParamLock: return kDefaultResonanceA;
+        case kParamGlide: return kDefaultTrackDelay;
+        case kParamTone: return kDefaultTone;
+        case kParamMix: return kDefaultWetDry;
+        case kParamHeat: return kDefaultHeat;
+        case kParamSens: return kDefaultInput;
+        case kParamGain1: return kDefaultGainA;
+        case kParamPosition2: return kDefaultPartialB;
+        case kParamFeedback2: return kDefaultFeedbackB;
+        case kParamLock2: return kDefaultResonanceB;
+        case kParamGain2: return kDefaultGainB;
+        case kParamPosition3: return kDefaultPartialC;
+        case kParamFeedback3: return kDefaultFeedbackC;
+        case kParamLock3: return kDefaultResonanceC;
+        case kParamGain3: return kDefaultGainC;
         default: break;
     }
     return 0.0;
@@ -165,36 +161,17 @@ void PinchFxProcessor::handleParameterChanges(ProcessData& data) {
         if (!queue) continue;
         const ParamID pid = queue->getParameterId();
         const int32 points = queue->getPointCount();
+        if (points <= 0) continue;
         ParamValue value = 0.0;
         int32 sampleOffset = 0;
-    if (pid == kParamTrig) {
-        bool trigNow = false;
-        for (int32 p = 0; p < points; ++p) {
-            ParamValue v = 0.0;
-            int32 o = 0;
-            queue->getPoint(p, o, v);
-            if (v > 0.5 && lastTrigValue_ <= 0.5) {
-                trigNow = true;
-                break;
-            }
-        }
         queue->getPoint(points - 1, sampleOffset, value);
         applyNormalizedParam(pid, value);
-        if (trigNow) {
-            algorithm_.triggerManual();
-        }
-        lastTrigValue_ = value;
-        } else {
-            queue->getPoint(points - 1, sampleOffset, value);
-            applyNormalizedParam(pid, value);
-        }
     }
 }
 
 void PinchFxProcessor::applyNormalizedParam(ParamID pid, ParamValue value) {
     paramState_[pid] = value;
     switch (pid) {
-        case kParamTrig: params_.trig = value; break;
         case kParamPosition: params_.position = value; break;
         case kParamSqueal: params_.feedback = value; break;
         case kParamGain1: params_.gain1 = value; break;
@@ -210,8 +187,6 @@ void PinchFxProcessor::applyNormalizedParam(ParamID pid, ParamValue value) {
         case kParamGlide: params_.glide = value; break;
         case kParamTone: params_.tone = value; break;
         case kParamMix: params_.mix = value; break;
-        case kParamMonitor: params_.monitor = value; break;
-        case kParamMode: break; // Legacy no-op.
         case kParamHeat: params_.heat = value; break;
         case kParamSens: params_.sens = value; break;
         default: break;
@@ -274,7 +249,6 @@ void PinchFxProcessor::processAudio(ProcessData& data, SampleType** in, SampleTy
     const double mixShaped = std::sqrt(mix); // Bias knob response toward wet so mid settings are more audible.
     const double dryMix = std::cos(0.5 * kPi * mixShaped);
     const double wetMix = std::sin(0.5 * kPi * mixShaped);
-    const int monitor = std::clamp(static_cast<int>(std::round(params_.monitor * 7.0)), 0, 7);
     blockCounter_ += 1;
 #ifdef PINCHFX_DEBUG_NAME
     int nonFiniteCount = 0;
@@ -287,29 +261,10 @@ void PinchFxProcessor::processAudio(ProcessData& data, SampleType** in, SampleTy
         const double monoIn = 0.5 * (inL + inR);
 
         const auto algOut = algorithm_.processSample(monoIn);
-        const double xbpMon = algOut.xbp;
 
-        double outL = 0.0;
-        double outR = 0.0;
-        if (monitor == 0) {
-            const double wet = kWetMakeup * algOut.xlim;
-            outL = dryMix * inL + wetMix * wet;
-            outR = dryMix * inR + wetMix * wet;
-        } else {
-            double tap = 0.0;
-            switch (monitor) {
-                case 1: tap = monoIn; break;
-                case 2: tap = monoIn; break;
-                case 3: tap = xbpMon; break;
-                case 4: tap = algOut.xr; break;
-                case 5: tap = algOut.xtone; break;
-                case 6: tap = algOut.xtube; break;
-                case 7: tap = algOut.xlim; break;
-                default: tap = algOut.xlim; break;
-            }
-            outL = tap;
-            outR = tap;
-        }
+        const double wet = kWetMakeup * algOut.xlim;
+        const double outL = dryMix * inL + wetMix * wet;
+        const double outR = dryMix * inR + wetMix * wet;
 
 #ifdef PINCHFX_DEBUG_NAME
         if (!std::isfinite(algOut.xlim) || !std::isfinite(outL) || !std::isfinite(outR)) {
@@ -332,7 +287,6 @@ void PinchFxProcessor::processAudio(ProcessData& data, SampleType** in, SampleTy
             << " lastXlim=" << lastNonFinite
             << " sr=" << sampleRate_
             << " mix=" << mix
-            << " monitor=" << monitor
             << std::endl;
     }
 #endif
@@ -341,10 +295,54 @@ void PinchFxProcessor::processAudio(ProcessData& data, SampleType** in, SampleTy
 Steinberg::tresult PLUGIN_API PinchFxProcessor::setState(IBStream* state) {
     if (!state) return kResultFalse;
     IBStreamer streamer(state, kLittleEndian);
-    for (auto pid : paramOrder_) {
-        double v = defaultNormalized(pid);
-        if (!streamer.readDouble(v)) v = defaultNormalized(pid);
-        applyNormalizedParam(pid, v);
+    std::vector<double> values{};
+    values.reserve(kLegacyStateValueCount);
+    double v = 0.0;
+    while (streamer.readDouble(v)) values.push_back(v);
+
+    auto loadParam = [&](size_t index, ParamID pid) {
+        const double loaded = (index < values.size()) ? values[index] : defaultNormalized(pid);
+        applyNormalizedParam(pid, loaded);
+    };
+
+    if (values.size() >= kLegacyStateValueCount) {
+        // Legacy state layout includes removed TRIGGER (index 0), MONITOR (index 7), and MODE (index 8).
+        loadParam(1, kParamPosition);
+        loadParam(2, kParamSqueal);
+        loadParam(3, kParamLock);
+        loadParam(4, kParamGlide);
+        loadParam(5, kParamTone);
+        loadParam(6, kParamMix);
+        loadParam(9, kParamHeat);
+        loadParam(10, kParamSens);
+        loadParam(11, kParamGain1);
+        loadParam(12, kParamPosition2);
+        loadParam(13, kParamFeedback2);
+        loadParam(14, kParamLock2);
+        loadParam(15, kParamGain2);
+        loadParam(16, kParamPosition3);
+        loadParam(17, kParamFeedback3);
+        loadParam(18, kParamLock3);
+        loadParam(19, kParamGain3);
+    } else {
+        // Current compact layout (TRIGGER/MONITOR/MODE removed).
+        loadParam(0, kParamPosition);
+        loadParam(1, kParamSqueal);
+        loadParam(2, kParamLock);
+        loadParam(3, kParamGlide);
+        loadParam(4, kParamTone);
+        loadParam(5, kParamMix);
+        loadParam(6, kParamHeat);
+        loadParam(7, kParamSens);
+        loadParam(8, kParamGain1);
+        loadParam(9, kParamPosition2);
+        loadParam(10, kParamFeedback2);
+        loadParam(11, kParamLock2);
+        loadParam(12, kParamGain2);
+        loadParam(13, kParamPosition3);
+        loadParam(14, kParamFeedback3);
+        loadParam(15, kParamLock3);
+        loadParam(16, kParamGain3);
     }
     syncAlgorithm();
     return kResultOk;
@@ -353,12 +351,36 @@ Steinberg::tresult PLUGIN_API PinchFxProcessor::setState(IBStream* state) {
 Steinberg::tresult PLUGIN_API PinchFxProcessor::getState(IBStream* state) {
     if (!state) return kResultFalse;
     IBStreamer streamer(state, kLittleEndian);
-    for (auto pid : paramOrder_) {
-        double v = defaultNormalized(pid);
+
+    auto getParam = [&](ParamID pid) -> double {
+        double current = defaultNormalized(pid);
         auto it = paramState_.find(pid);
-        if (it != paramState_.end()) v = it->second;
-        streamer.writeDouble(v);
-    }
+        if (it != paramState_.end()) current = it->second;
+        return current;
+    };
+
+    // Write legacy-compatible layout so older builds can still parse state.
+    streamer.writeDouble(0.0); // Removed TRIGGER slot.
+    streamer.writeDouble(getParam(kParamPosition));
+    streamer.writeDouble(getParam(kParamSqueal));
+    streamer.writeDouble(getParam(kParamLock));
+    streamer.writeDouble(getParam(kParamGlide));
+    streamer.writeDouble(getParam(kParamTone));
+    streamer.writeDouble(getParam(kParamMix));
+    streamer.writeDouble(0.0); // Removed MONITOR slot.
+    streamer.writeDouble(0.0); // Removed MODE slot.
+    streamer.writeDouble(getParam(kParamHeat));
+    streamer.writeDouble(getParam(kParamSens));
+    streamer.writeDouble(getParam(kParamGain1));
+    streamer.writeDouble(getParam(kParamPosition2));
+    streamer.writeDouble(getParam(kParamFeedback2));
+    streamer.writeDouble(getParam(kParamLock2));
+    streamer.writeDouble(getParam(kParamGain2));
+    streamer.writeDouble(getParam(kParamPosition3));
+    streamer.writeDouble(getParam(kParamFeedback3));
+    streamer.writeDouble(getParam(kParamLock3));
+    streamer.writeDouble(getParam(kParamGain3));
+
     return kResultOk;
 }
 

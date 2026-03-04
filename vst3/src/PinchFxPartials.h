@@ -2,8 +2,9 @@
 // MIT License
 #pragma once
 
+#include "PinchFxDefaults.h"
+
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstddef>
 
@@ -11,7 +12,7 @@ namespace pinchfx {
 
 // Edit this one list to change available PARTIAL choices everywhere
 // (DSP mapping, controller strings/step count, and sim labels).
-inline constexpr std::array<int, 8> kPartialChoices{2, 4, 5, 7, 8, 9, 12, 15};
+inline constexpr auto kPartialChoices = kDefaultPartialChoices;
 
 inline constexpr int kPartialChoiceCount = static_cast<int>(kPartialChoices.size());
 inline constexpr int kPartialStepCount = (kPartialChoiceCount > 0) ? (kPartialChoiceCount - 1) : 0;

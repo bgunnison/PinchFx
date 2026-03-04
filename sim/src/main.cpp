@@ -7,6 +7,7 @@
 #include "SimIO.h"
 #include "PinchFxSimProcessor.h"
 #include "SimScope.h"
+#include "../../vst3/src/PinchFxDefaults.h"
 #include "../../vst3/src/PinchFxPartials.h"
 
 // #define SAMPLE_WAV "C:\\projects\\ableplugs\\pinchfx\\sim\\pluck.wav"
@@ -88,27 +89,26 @@ constexpr int kIdFeedback3 = 1016;
 constexpr int kIdLock3 = 1017;
 constexpr int kIdGain3 = 1018;
 
-constexpr float kResDefault = 0.0f;
 constexpr float kInputGainBoost = 10.0f;
 
 constexpr SliderSpec kSliders[] = {
-    {"INPUT", kIdInputGain, kTopMargin + 0 * kRowHeight, 0, 1000, 0.5f},
-    {"TRACK DELAY", kIdTrack, kTopMargin + 1 * kRowHeight, 0, 1000, 0.25f},
-    {"A PARTIAL", kIdPosition1, kTopMargin + 2 * kRowHeight, 0, 1000, 0.5f},
-    {"A RES", kIdLock1, kTopMargin + 3 * kRowHeight, 0, 1000, kResDefault},
-    {"A FEEDBACK", kIdFeedback1, kTopMargin + 4 * kRowHeight, 0, 1000, 0.0f},
-    {"A GAIN", kIdGain1, kTopMargin + 5 * kRowHeight, 0, 1000, 1.0f},
-    {"B PARTIAL", kIdPosition2, kTopMargin + 6 * kRowHeight, 0, 1000, 0.5f},
-    {"B RES", kIdLock2, kTopMargin + 7 * kRowHeight, 0, 1000, kResDefault},
-    {"B FEEDBACK", kIdFeedback2, kTopMargin + 8 * kRowHeight, 0, 1000, 0.0f},
-    {"B GAIN", kIdGain2, kTopMargin + 9 * kRowHeight, 0, 1000, 0.0f},
-    {"C PARTIAL", kIdPosition3, kTopMargin + 10 * kRowHeight, 0, 1000, 0.5f},
-    {"C RES", kIdLock3, kTopMargin + 11 * kRowHeight, 0, 1000, kResDefault},
-    {"C FEEDBACK", kIdFeedback3, kTopMargin + 12 * kRowHeight, 0, 1000, 0.0f},
-    {"C GAIN", kIdGain3, kTopMargin + 13 * kRowHeight, 0, 1000, 0.0f},
-    {"HEAT", kIdHeat, kTopMargin + 14 * kRowHeight, 0, 1000, 0.0f},
-    {"TONE", kIdTone, kTopMargin + 15 * kRowHeight, 0, 1000, 1.0f},
-    {"WET/DRY", kIdMix, kTopMargin + 16 * kRowHeight, 0, 1000, 1.0f},
+    {"INPUT", kIdInputGain, kTopMargin + 0 * kRowHeight, 0, 1000, static_cast<float>(pinchfx::kDefaultInput)},
+    {"TRACK DELAY", kIdTrack, kTopMargin + 1 * kRowHeight, 0, 1000, static_cast<float>(pinchfx::kDefaultTrackDelay)},
+    {"A PARTIAL", kIdPosition1, kTopMargin + 2 * kRowHeight, 0, 1000, static_cast<float>(pinchfx::kDefaultPartialA)},
+    {"A RES", kIdLock1, kTopMargin + 3 * kRowHeight, 0, 1000, static_cast<float>(pinchfx::kDefaultResonanceA)},
+    {"A FEEDBACK", kIdFeedback1, kTopMargin + 4 * kRowHeight, 0, 1000, static_cast<float>(pinchfx::kDefaultFeedbackA)},
+    {"A GAIN", kIdGain1, kTopMargin + 5 * kRowHeight, 0, 1000, static_cast<float>(pinchfx::kDefaultGainA)},
+    {"B PARTIAL", kIdPosition2, kTopMargin + 6 * kRowHeight, 0, 1000, static_cast<float>(pinchfx::kDefaultPartialB)},
+    {"B RES", kIdLock2, kTopMargin + 7 * kRowHeight, 0, 1000, static_cast<float>(pinchfx::kDefaultResonanceB)},
+    {"B FEEDBACK", kIdFeedback2, kTopMargin + 8 * kRowHeight, 0, 1000, static_cast<float>(pinchfx::kDefaultFeedbackB)},
+    {"B GAIN", kIdGain2, kTopMargin + 9 * kRowHeight, 0, 1000, static_cast<float>(pinchfx::kDefaultGainB)},
+    {"C PARTIAL", kIdPosition3, kTopMargin + 10 * kRowHeight, 0, 1000, static_cast<float>(pinchfx::kDefaultPartialC)},
+    {"C RES", kIdLock3, kTopMargin + 11 * kRowHeight, 0, 1000, static_cast<float>(pinchfx::kDefaultResonanceC)},
+    {"C FEEDBACK", kIdFeedback3, kTopMargin + 12 * kRowHeight, 0, 1000, static_cast<float>(pinchfx::kDefaultFeedbackC)},
+    {"C GAIN", kIdGain3, kTopMargin + 13 * kRowHeight, 0, 1000, static_cast<float>(pinchfx::kDefaultGainC)},
+    {"HEAT", kIdHeat, kTopMargin + 14 * kRowHeight, 0, 1000, static_cast<float>(pinchfx::kDefaultHeat)},
+    {"TONE", kIdTone, kTopMargin + 15 * kRowHeight, 0, 1000, static_cast<float>(pinchfx::kDefaultTone)},
+    {"WET/DRY", kIdMix, kTopMargin + 16 * kRowHeight, 0, 1000, static_cast<float>(pinchfx::kDefaultWetDry)},
 };
 
 struct AudioState {

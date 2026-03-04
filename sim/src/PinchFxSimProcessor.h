@@ -27,14 +27,6 @@ public:
         algorithm_.setParams(params);
     }
 
-    void triggerManual() {
-        algorithm_.triggerManual();
-    }
-
-    void resetGate() {
-        algorithm_.resetGate();
-    }
-
     void processBlock(const float* in, float* out, int numChannels, int numSamples) {
         static constexpr double kPi = 3.14159265358979323846;
         static constexpr double kWetMakeup = 1.0; // Wet level now auto-matched in shared DSP via output AGC.

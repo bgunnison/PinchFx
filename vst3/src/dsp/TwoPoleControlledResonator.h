@@ -2,6 +2,8 @@
 // MIT License
 #pragma once
 
+#include "../PinchFxDefaults.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -11,7 +13,7 @@ namespace pinchfx::dsp {
     //
     // Resonance mapping (temporary linear mapping):
     //   0.0 -> Q = 0.5
-    //   1.0 -> Q = 5.0
+    //   1.0 -> Q = 8.0
     //
     // Key control features:
     // - Resonance parameter is normalized [0..1] (setQ expects 0..1 now).
@@ -33,8 +35,8 @@ namespace pinchfx::dsp {
         static constexpr double PI = 3.14159265358979323846;
 
         // Linear resonance-to-Q map endpoints.
-        static constexpr double Q_MIN_LINEAR = 0.5;
-        static constexpr double Q_MAX_LINEAR = 5.0;
+        static constexpr double Q_MIN_LINEAR = pinchfx::kResonanceQMin;
+        static constexpr double Q_MAX_LINEAR = pinchfx::kResonanceQMax;
 
         // Minimum bandwidth clamp in Hz:
         // BW ~= f / Q  =>  Qcap = f / BWmin

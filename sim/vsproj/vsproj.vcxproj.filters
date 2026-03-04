@@ -59,5 +59,11 @@
     <ClInclude Include="..\src\SimScope.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\vst3\src\PinchFxDefaults.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\config.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

@@ -54,7 +54,6 @@ private:
 
     double sampleRate_{44100.0};
     int32_t maxBlockSize_{0};
-    double lastTrigValue_{0.0};
 
     int64_t blockCounter_{0};
 

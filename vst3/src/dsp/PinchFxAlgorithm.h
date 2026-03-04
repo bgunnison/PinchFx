@@ -5,6 +5,7 @@
 
 #include "PitchTrackerACF.h"
 #include "PitchTrackerAlgo.h"
+#include "../PinchFxDefaults.h"
 #include "../PinchFxPartials.h"
 #include "TwoPoleControlledResonator.h"
 #include "MiniComb.h"
@@ -24,47 +25,23 @@ namespace pinchfx::dsp {
 class PinchFxAlgorithm {
 public:
     struct Params {
-        static constexpr double DEFAULT_TRIG = 0.0; // Manual trigger off.
-        static constexpr double DEFAULT_POSITION = 0.5; // Middle harmonic selection.
-        static constexpr double DEFAULT_POSITION2 = 0.5; // Voice B harmonic selection.
-        static constexpr double DEFAULT_POSITION3 = 0.5; // Voice C harmonic selection.
-        static constexpr double DEFAULT_LOCK = 0.0; // Resonance control in normalized 0..1 space.
-        static constexpr double DEFAULT_LOCK2 = DEFAULT_LOCK; // Voice B resonance default.
-        static constexpr double DEFAULT_LOCK3 = DEFAULT_LOCK; // Voice C resonance default.
-        static constexpr double DEFAULT_GLIDE = 0.25; // Tracker time-constant control.
-        static constexpr double DEFAULT_TONE = 1.0; // Default fully open tone.
-        static constexpr double DEFAULT_MIX = 1.0; // Full wet by default.
-        static constexpr double DEFAULT_MONITOR = 0.0; // Monitor off.
-        static constexpr double DEFAULT_MODE = 0.0; // Legacy state slot (unused).
-        static constexpr double DEFAULT_HEAT = 0.0; // No added drive.
-        static constexpr double DEFAULT_SENS = 0.5; // AGC drive trim neutral point.
-        static constexpr double DEFAULT_FEEDBACK = 0.0; // Comb stage off by default.
-        static constexpr double DEFAULT_FEEDBACK2 = 0.0; // Voice B comb off by default.
-        static constexpr double DEFAULT_FEEDBACK3 = 0.0; // Voice C comb off by default.
-        static constexpr double DEFAULT_GAIN1 = 1.0; // Main voice on by default.
-        static constexpr double DEFAULT_GAIN2 = 0.0; // Extra voices off by default.
-        static constexpr double DEFAULT_GAIN3 = 0.0; // Extra voices off by default.
-
-        double trig{DEFAULT_TRIG};
-        double position{DEFAULT_POSITION};
-        double position2{DEFAULT_POSITION2};
-        double position3{DEFAULT_POSITION3};
-        double lock{DEFAULT_LOCK};
-        double lock2{DEFAULT_LOCK2};
-        double lock3{DEFAULT_LOCK3};
-        double glide{DEFAULT_GLIDE}; // Tracker response time.
-        double tone{DEFAULT_TONE};
-        double mix{DEFAULT_MIX};
-        double monitor{DEFAULT_MONITOR};
-        double mode{DEFAULT_MODE}; // Legacy state slot (unused).
-        double heat{DEFAULT_HEAT};
-        double sens{DEFAULT_SENS}; // AGC drive trim control (0.5 = unity).
-        double feedback{DEFAULT_FEEDBACK}; // Mini-comb feedback amount.
-        double feedback2{DEFAULT_FEEDBACK2}; // Voice B mini-comb feedback.
-        double feedback3{DEFAULT_FEEDBACK3}; // Voice C mini-comb feedback.
-        double gain1{DEFAULT_GAIN1}; // Voice A mix gain.
-        double gain2{DEFAULT_GAIN2}; // Voice B mix gain.
-        double gain3{DEFAULT_GAIN3}; // Voice C mix gain.
+        double position{kDefaultPartialA};
+        double position2{kDefaultPartialB};
+        double position3{kDefaultPartialC};
+        double lock{kDefaultResonanceA};
+        double lock2{kDefaultResonanceB};
+        double lock3{kDefaultResonanceC};
+        double glide{kDefaultTrackDelay}; // Tracker response time.
+        double tone{kDefaultTone};
+        double mix{kDefaultWetDry};
+        double heat{kDefaultHeat};
+        double sens{kDefaultInput}; // AGC drive trim control (0.5 = unity).
+        double feedback{kDefaultFeedbackA}; // Mini-comb feedback amount.
+        double feedback2{kDefaultFeedbackB}; // Voice B mini-comb feedback.
+        double feedback3{kDefaultFeedbackC}; // Voice C mini-comb feedback.
+        double gain1{kDefaultGainA}; // Voice A mix gain.
+        double gain2{kDefaultGainB}; // Voice B mix gain.
+        double gain3{kDefaultGainC}; // Voice C mix gain.
     };
 
     struct SampleOut {
@@ -85,7 +62,6 @@ public:
     void prepare(double sampleRate, int maxBlock) {
         sampleRate_ = sampleRate > 0.0 ? sampleRate : DEFAULT_SAMPLE_RATE;
         maxBlock_ = maxBlock;
-        trigWindowSamples_ = static_cast<int>(std::round(TRIG_WINDOW_REF_SAMPLES * sampleRate_ / TRIG_WINDOW_REF_SR));
         updateAgcCoeffs();
 
         const double minPitch = MIN_PITCH_HZ;
@@ -139,14 +115,6 @@ public:
     void setParams(const Params& params) {
         params_ = params;
         updateDerived();
-    }
-
-    void triggerManual() {
-        (void)trigWindowSamples_;
-    }
-
-    void resetGate() {
-        // Gate is now an analysis-only signal (not in audio path), so nothing to reset.
     }
 
     SampleOut processSample(double monoIn) {
@@ -233,8 +201,6 @@ public:
 
 private:
     static constexpr double DEFAULT_SAMPLE_RATE = 44100.0; // Fallback when host reports 0 Hz.
-    static constexpr double TRIG_WINDOW_REF_SR = 48000.0; // Reference for manual trigger length.
-    static constexpr double TRIG_WINDOW_REF_SAMPLES = 4096.0; // Manual trigger window at 48 kHz.
     static constexpr double MIN_PITCH_HZ = 70.0; // Lower bound for tracker and clamp.
     static constexpr double MAX_PITCH_HZ = 1200.0; // Upper bound for tracker and clamp.
     static constexpr int MIN_FRAME_SIZE = 512; // Stable ACF window for low pitches.
@@ -288,10 +254,10 @@ private:
     static constexpr double WET_MATCH_GAIN_DOWN_MS = 3.0; // Fast downward moves to tame oscillation bursts.
     static constexpr double COMB_MAX_DELAY_SECONDS = 0.2; // Supports low tuning frequencies without wrap.
     static constexpr double COMB_DAMPING = 0.35; // Prevents harsh high-frequency buildup.
-    static constexpr double DEFAULT_Q_VALUE = Params::DEFAULT_LOCK; // Resonance is already normalized 0..1.
-    static constexpr double DEFAULT_TONE_CUTOFF = TONE_CUTOFF_MIN + TONE_CUTOFF_RANGE * Params::DEFAULT_TONE; // Derived default tone cutoff.
-    static constexpr double DEFAULT_TUBE_DRIVE = TUBE_DRIVE_BASE + TUBE_DRIVE_RANGE * Params::DEFAULT_HEAT; // Derived default drive.
-    static constexpr double DEFAULT_TUBE_BIAS = TUBE_BIAS_BASE - TUBE_BIAS_RANGE * Params::DEFAULT_TONE; // Derived default bias.
+    static constexpr double DEFAULT_Q_VALUE = kDefaultResonanceA; // Resonance is already normalized 0..1.
+    static constexpr double DEFAULT_TONE_CUTOFF = TONE_CUTOFF_MIN + TONE_CUTOFF_RANGE * kDefaultTone; // Derived default tone cutoff.
+    static constexpr double DEFAULT_TUBE_DRIVE = TUBE_DRIVE_BASE + TUBE_DRIVE_RANGE * kDefaultHeat; // Derived default drive.
+    static constexpr double DEFAULT_TUBE_BIAS = TUBE_BIAS_BASE - TUBE_BIAS_RANGE * kDefaultTone; // Derived default bias.
     static constexpr double DEFAULT_AGC_DRIVE_TRIM = 1.0; // sens default (0.5) keeps AGC drive unchanged.
 
     int selectPartial_(double positionNorm) const {
@@ -381,7 +347,6 @@ private:
 
     double sampleRate_{DEFAULT_SAMPLE_RATE};
     int maxBlock_{0};
-    int trigWindowSamples_{static_cast<int>(TRIG_WINDOW_REF_SAMPLES)};
     std::array<int, kPathCount> partials_{5, 5, 5};
 
     double f0Smoothed_{DEFAULT_F0_HZ};
@@ -402,8 +367,8 @@ private:
     double wetMatchGainDownCoeff_{0.0};
 
     std::array<double, kPathCount> qValues_{DEFAULT_Q_VALUE, DEFAULT_Q_VALUE, DEFAULT_Q_VALUE};
-    std::array<double, kPathCount> combFeedbacks_{Params::DEFAULT_FEEDBACK, Params::DEFAULT_FEEDBACK2, Params::DEFAULT_FEEDBACK3};
-    std::array<double, kPathCount> pathGains_{Params::DEFAULT_GAIN1, Params::DEFAULT_GAIN2, Params::DEFAULT_GAIN3};
+    std::array<double, kPathCount> combFeedbacks_{kDefaultFeedbackA, kDefaultFeedbackB, kDefaultFeedbackC};
+    std::array<double, kPathCount> pathGains_{kDefaultGainA, kDefaultGainB, kDefaultGainC};
     double toneCutoff_{DEFAULT_TONE_CUTOFF};
     double tubeDrive_{DEFAULT_TUBE_DRIVE};
     double tubeBias_{DEFAULT_TUBE_BIAS};

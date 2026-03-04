@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Brian R. Gunnison
 // MIT License
 #include "PinchFxController.h"
+#include "PinchFxDefaults.h"
 #include "PinchFxPartials.h"
 
 #include "base/source/fstreamer.h"
@@ -12,36 +13,15 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <vector>
 
 namespace pinchfx {
 using namespace Steinberg;
 using namespace Steinberg::Vst;
 
 namespace {
-
-const char* monitorLabel(int index) {
-    switch (index) {
-        case 0: return "Mix";
-        case 1: return "Input";
-        case 2: return "Detect";
-        case 3: return "Resonator";
-        case 4: return "Squeal";
-        case 5: return "Tone";
-        case 6: return "Tube";
-        case 7: return "Limiter";
-        default: return "";
-    }
+constexpr size_t kLegacyStateValueCount = 20;
 }
-
-bool equalsAscii(const TChar* text, const char* ascii) {
-    if (!text || !ascii) return false;
-    UString128 ustr(text);
-    char buffer[128]{};
-    ustr.toAscii(buffer, sizeof(buffer));
-    return std::strcmp(buffer, ascii) == 0;
-}
-
-} // namespace
 
 //------------------------------------------------------------------------
 
@@ -93,12 +73,55 @@ IPlugView* PLUGIN_API PinchFxController::createView(FIDString name) {
 Steinberg::tresult PLUGIN_API PinchFxController::setComponentState(IBStream* state) {
     if (!state) return kResultFalse;
     IBStreamer streamer(state, kLittleEndian);
-    for (auto pid : paramOrder_) {
-        double value = defaultNormalized(pid);
-        if (!streamer.readDouble(value)) {
-            value = defaultNormalized(pid);
-        }
-        setParamNormalized(pid, value);
+
+    std::vector<double> values{};
+    values.reserve(kLegacyStateValueCount);
+    double value = 0.0;
+    while (streamer.readDouble(value)) values.push_back(value);
+
+    auto loadParam = [&](size_t index, ParamID pid) {
+        const double loaded = (index < values.size()) ? values[index] : defaultNormalized(pid);
+        setParamNormalized(pid, loaded);
+    };
+
+    if (values.size() >= kLegacyStateValueCount) {
+        // Legacy state layout includes removed TRIGGER (index 0), MONITOR (index 7), and MODE (index 8).
+        loadParam(1, kParamPosition);
+        loadParam(2, kParamSqueal);
+        loadParam(3, kParamLock);
+        loadParam(4, kParamGlide);
+        loadParam(5, kParamTone);
+        loadParam(6, kParamMix);
+        loadParam(9, kParamHeat);
+        loadParam(10, kParamSens);
+        loadParam(11, kParamGain1);
+        loadParam(12, kParamPosition2);
+        loadParam(13, kParamFeedback2);
+        loadParam(14, kParamLock2);
+        loadParam(15, kParamGain2);
+        loadParam(16, kParamPosition3);
+        loadParam(17, kParamFeedback3);
+        loadParam(18, kParamLock3);
+        loadParam(19, kParamGain3);
+    } else {
+        // Current compact layout (TRIGGER/MONITOR/MODE removed).
+        loadParam(0, kParamPosition);
+        loadParam(1, kParamSqueal);
+        loadParam(2, kParamLock);
+        loadParam(3, kParamGlide);
+        loadParam(4, kParamTone);
+        loadParam(5, kParamMix);
+        loadParam(6, kParamHeat);
+        loadParam(7, kParamSens);
+        loadParam(8, kParamGain1);
+        loadParam(9, kParamPosition2);
+        loadParam(10, kParamFeedback2);
+        loadParam(11, kParamLock2);
+        loadParam(12, kParamGain2);
+        loadParam(13, kParamPosition3);
+        loadParam(14, kParamFeedback3);
+        loadParam(15, kParamLock3);
+        loadParam(16, kParamGain3);
     }
     return kResultOk;
 }
@@ -106,12 +129,36 @@ Steinberg::tresult PLUGIN_API PinchFxController::setComponentState(IBStream* sta
 Steinberg::tresult PLUGIN_API PinchFxController::getState(IBStream* state) {
     if (!state) return kResultFalse;
     IBStreamer streamer(state, kLittleEndian);
-    for (auto pid : paramOrder_) {
-        ParamValue value = defaultNormalized(pid);
+
+    auto getParam = [&](ParamID pid) -> double {
+        double current = defaultNormalized(pid);
         auto it = paramState_.find(pid);
-        if (it != paramState_.end()) value = it->second;
-        streamer.writeDouble(value);
-    }
+        if (it != paramState_.end()) current = it->second;
+        return current;
+    };
+
+    // Write legacy-compatible layout so older builds can still parse state.
+    streamer.writeDouble(0.0); // Removed TRIGGER slot.
+    streamer.writeDouble(getParam(kParamPosition));
+    streamer.writeDouble(getParam(kParamSqueal));
+    streamer.writeDouble(getParam(kParamLock));
+    streamer.writeDouble(getParam(kParamGlide));
+    streamer.writeDouble(getParam(kParamTone));
+    streamer.writeDouble(getParam(kParamMix));
+    streamer.writeDouble(0.0); // Removed MONITOR slot.
+    streamer.writeDouble(0.0); // Removed MODE slot.
+    streamer.writeDouble(getParam(kParamHeat));
+    streamer.writeDouble(getParam(kParamSens));
+    streamer.writeDouble(getParam(kParamGain1));
+    streamer.writeDouble(getParam(kParamPosition2));
+    streamer.writeDouble(getParam(kParamFeedback2));
+    streamer.writeDouble(getParam(kParamLock2));
+    streamer.writeDouble(getParam(kParamGain2));
+    streamer.writeDouble(getParam(kParamPosition3));
+    streamer.writeDouble(getParam(kParamFeedback3));
+    streamer.writeDouble(getParam(kParamLock3));
+    streamer.writeDouble(getParam(kParamGain3));
+
     return kResultOk;
 }
 
@@ -133,11 +180,6 @@ Steinberg::tresult PLUGIN_API PinchFxController::getParamStringByValue(ParamID p
         result.fromAscii(text);
         return kResultOk;
     }
-    if (pid == kParamMonitor) {
-        int idx = static_cast<int>(std::round(valueNormalized * 7.0));
-        result.fromAscii(monitorLabel(std::clamp(idx, 0, 7)));
-        return kResultOk;
-    }
     return EditControllerEx1::getParamStringByValue(pid, valueNormalized, string);
 }
 
@@ -157,28 +199,17 @@ Steinberg::tresult PLUGIN_API PinchFxController::getParamValueByString(ParamID p
             }
         }
     }
-    if (pid == kParamMonitor) {
-        for (int i = 0; i <= 7; ++i) {
-            if (equalsAscii(string, monitorLabel(i))) {
-                valueNormalized = static_cast<ParamValue>(i) / 7.0;
-                return kResultOk;
-            }
-        }
-    }
     return EditControllerEx1::getParamValueByString(pid, string, valueNormalized);
 }
 
 void PinchFxController::buildParamOrder() {
     paramOrder_.clear();
-    paramOrder_.push_back(kParamTrig);
     paramOrder_.push_back(kParamPosition);
     paramOrder_.push_back(kParamSqueal); // FEEDBACK control (reuses legacy slot).
     paramOrder_.push_back(kParamLock);
     paramOrder_.push_back(kParamGlide); // Tracker time-constant control.
     paramOrder_.push_back(kParamTone);
     paramOrder_.push_back(kParamMix);
-    paramOrder_.push_back(kParamMonitor);
-    paramOrder_.push_back(kParamMode); // Hidden legacy slot for state compatibility.
     paramOrder_.push_back(kParamHeat);
     paramOrder_.push_back(kParamSens); // INPUT control.
     paramOrder_.push_back(kParamGain1);
@@ -194,26 +225,23 @@ void PinchFxController::buildParamOrder() {
 
 ParamValue PinchFxController::defaultNormalized(ParamID pid) const {
     switch (pid) {
-        case kParamTrig: return 0.0;
-        case kParamPosition: return 0.5;
-        case kParamSqueal: return 0.0;
-        case kParamLock: return 0.0;
-        case kParamGlide: return 0.25;
-        case kParamTone: return 1.0;
-        case kParamMix: return 1.0;
-        case kParamMonitor: return 0.0;
-        case kParamMode: return 0.0;
-        case kParamHeat: return 0.0;
-        case kParamSens: return 0.5;
-        case kParamGain1: return 1.0;
-        case kParamPosition2: return 0.5;
-        case kParamFeedback2: return 0.0;
-        case kParamLock2: return 0.0;
-        case kParamGain2: return 0.0;
-        case kParamPosition3: return 0.5;
-        case kParamFeedback3: return 0.0;
-        case kParamLock3: return 0.0;
-        case kParamGain3: return 0.0;
+        case kParamPosition: return kDefaultPartialA;
+        case kParamSqueal: return kDefaultFeedbackA;
+        case kParamLock: return kDefaultResonanceA;
+        case kParamGlide: return kDefaultTrackDelay;
+        case kParamTone: return kDefaultTone;
+        case kParamMix: return kDefaultWetDry;
+        case kParamHeat: return kDefaultHeat;
+        case kParamSens: return kDefaultInput;
+        case kParamGain1: return kDefaultGainA;
+        case kParamPosition2: return kDefaultPartialB;
+        case kParamFeedback2: return kDefaultFeedbackB;
+        case kParamLock2: return kDefaultResonanceB;
+        case kParamGain2: return kDefaultGainB;
+        case kParamPosition3: return kDefaultPartialC;
+        case kParamFeedback3: return kDefaultFeedbackC;
+        case kParamLock3: return kDefaultResonanceC;
+        case kParamGain3: return kDefaultGainC;
         default: break;
     }
     return 0.0;

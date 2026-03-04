@@ -31,26 +31,26 @@ constexpr Steinberg::FIDString kPinchFxVst3Url = "https://ableplugs.local/pinchf
 constexpr Steinberg::FIDString kPinchFxVst3Email = "support@ableplugs.local";
 
 enum ParamIDs : Steinberg::Vst::ParamID {
-    kParamTrig = 0,
-    kParamPosition,
-    kParamSqueal,
-    kParamLock,
-    kParamGlide,
-    kParamTone,
-    kParamMix,
-    kParamMonitor,
-    kParamMode,
-    kParamHeat,
-    kParamSens,
-    kParamGain1,
-    kParamPosition2,
-    kParamFeedback2,
-    kParamLock2,
-    kParamGain2,
-    kParamPosition3,
-    kParamFeedback3,
-    kParamLock3,
-    kParamGain3
+    // 0 was kParamTrig (removed).
+    kParamPosition = 1,
+    kParamSqueal = 2,
+    kParamLock = 3,
+    kParamGlide = 4,
+    kParamTone = 5,
+    kParamMix = 6,
+    // 7 was kParamMonitor (removed).
+    // 8 was kParamMode (removed).
+    kParamHeat = 9,
+    kParamSens = 10,
+    kParamGain1 = 11,
+    kParamPosition2 = 12,
+    kParamFeedback2 = 13,
+    kParamLock2 = 14,
+    kParamGain2 = 15,
+    kParamPosition3 = 16,
+    kParamFeedback3 = 17,
+    kParamLock3 = 18,
+    kParamGain3 = 19
 };
 
 } // namespace pinchfx

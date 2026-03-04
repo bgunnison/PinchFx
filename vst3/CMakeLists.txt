@@ -42,6 +42,7 @@ set(PinchFX_HEADERS
     src/PinchFxProcessor.h
     src/PinchFxController.h
     src/PinchFxIDs.h
+    src/PinchFxDefaults.h
     src/PinchFxPartials.h
     src/dsp/PitchTrackerACF.h
     src/dsp/PitchTrackerAlgo.h
