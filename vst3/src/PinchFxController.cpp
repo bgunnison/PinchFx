@@ -7,6 +7,7 @@
 #include "base/source/fstreamer.h"
 #include "pluginterfaces/base/ustring.h"
 #include "pluginterfaces/vst/ivstparameterchanges.h"
+#include "vstgui/plugin-bindings/vst3editor.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -64,10 +65,10 @@ Steinberg::tresult PLUGIN_API PinchFxController::initialize(FUnknown* context) {
 }
 
 IPlugView* PLUGIN_API PinchFxController::createView(FIDString name) {
-    if (name && std::strcmp(name, ViewType::kEditor) == 0) {
-        return nullptr;
+    if (FIDStringsEqual(name, ViewType::kEditor)) {
+        return new VSTGUI::VST3Editor(this, "view", "pinchfx.uidesc");
     }
-    return nullptr;
+    return EditControllerEx1::createView(name);
 }
 
 Steinberg::tresult PLUGIN_API PinchFxController::setComponentState(IBStream* state) {

@@ -73,7 +73,7 @@ target_link_libraries(PinchFX PRIVATE
 )
 
 target_compile_definitions(PinchFX PRIVATE
-    $<$<CONFIG:Debug>:VSTGUI_LIVE_EDITING=1>
+    VSTGUI_LIVE_EDITING=1
     $<$<CONFIG:Debug>:PINCHFX_DEBUG_NAME>
     $<$<CONFIG:Debug>:PINCHFX_DEBUG_UIDS>
 )
@@ -84,4 +84,14 @@ set_target_properties(PinchFX PROPERTIES
     OUTPUT_NAME_RELEASE "PinchFX"
     OUTPUT_NAME_RELWITHDEBINFO "PinchFX"
     OUTPUT_NAME_MINSIZEREL "PinchFX"
+)
+
+set(PinchFX_RESOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/pinchfx.uidesc
+    ${CMAKE_CURRENT_SOURCE_DIR}/logo_strip.png
+)
+
+smtg_target_add_plugin_resources(PinchFX
+    RESOURCES
+        ${PinchFX_RESOURCES}
 )

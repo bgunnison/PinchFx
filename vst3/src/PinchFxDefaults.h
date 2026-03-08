@@ -16,9 +16,9 @@ inline constexpr double kResonanceQMax = 8.0;
 
 inline constexpr double kDefaultInput = 0.5; // INPUT, normalized [0.0..1.0]
 inline constexpr double kDefaultTrackDelay = 0.25; // TRACK DELAY, normalized [0.0..1.0]
-inline constexpr double kDefaultPartialA = 0.5; // A PARTIAL, normalized [0.0..1.0]
-inline constexpr double kDefaultPartialB = 0.5; // B PARTIAL, normalized [0.0..1.0]
-inline constexpr double kDefaultPartialC = 0.5; // C PARTIAL, normalized [0.0..1.0]
+inline constexpr double kDefaultPartialA = 0.0; // A PARTIAL default = 2
+inline constexpr double kDefaultPartialB = 2.0 / 7.0; // B PARTIAL default = 5
+inline constexpr double kDefaultPartialC = 3.0 / 7.0; // C PARTIAL default = 7
 inline constexpr double kDefaultResonanceA = 0.0; // A RES, normalized [0.0..1.0] => Q [0.5..8.0]
 inline constexpr double kDefaultResonanceB = 0.0; // B RES, normalized [0.0..1.0] => Q [0.5..8.0]
 inline constexpr double kDefaultResonanceC = 0.0; // C RES, normalized [0.0..1.0] => Q [0.5..8.0]
