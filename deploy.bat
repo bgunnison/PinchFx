@@ -2,7 +2,6 @@
 setlocal
 
 set ROOT=%~dp0
-
 set SRC_DEBUG_BIN=%ROOT%build\VST3\Debug\PinchFX.vst3
 set SRC_DEBUG_RES=%ROOT%build\VST3\Debug\DebugPinchFX.vst3
 set SRC_RELEASE=%ROOT%build\VST3\Release\PinchFX.vst3
@@ -11,13 +10,13 @@ set DST_DEBUG=%DST_DIR%\DebugPinchFX.vst3
 set DST_RELEASE=%DST_DIR%\PinchFX.vst3
 
 if not exist "%SRC_DEBUG_BIN%" (
-  echo Missing Debug binary bundle at: %SRC_DEBUG_BIN%
+  echo Missing Debug build at: %SRC_DEBUG_BIN%
   echo Run build.bat first.
   goto :done
 )
 
 if not exist "%SRC_DEBUG_RES%" (
-  echo Missing Debug resource bundle at: %SRC_DEBUG_RES%
+  echo Missing Debug resources at: %SRC_DEBUG_RES%
   echo Run build.bat first.
   goto :done
 )
@@ -65,19 +64,23 @@ if not exist "%DST_DEBUG%\Contents\x86_64-win\DebugPinchFX.vst3" (
   goto :done
 )
 
-if not exist "%DST_DEBUG%\Contents\Resources\pinchfx.uidesc" (
-  echo Debug deploy failed: missing %DST_DEBUG%\Contents\Resources\pinchfx.uidesc
-  goto :done
-)
-
 if not exist "%DST_RELEASE%\Contents\x86_64-win\PinchFX.vst3" (
   echo Release deploy failed: missing %DST_RELEASE%\Contents\x86_64-win\PinchFX.vst3
   goto :done
 )
 
-if not exist "%DST_RELEASE%\Contents\Resources\pinchfx.uidesc" (
-  echo Release deploy failed: missing %DST_RELEASE%\Contents\Resources\pinchfx.uidesc
-  goto :done
+for %%F in ("%DST_DEBUG%\Contents\Resources\pinchfx.uidesc" "%DST_RELEASE%\Contents\Resources\pinchfx.uidesc") do (
+  if not exist "%%~F" (
+    echo Deploy failed: missing %%~F
+    goto :done
+  )
+)
+
+for %%F in ("%DST_DEBUG%\Contents\Resources\logo_strip.png" "%DST_RELEASE%\Contents\Resources\logo_strip.png") do (
+  if not exist "%%~F" (
+    echo Deploy failed: missing %%~F
+    goto :done
+  )
 )
 
 echo Deploy OK: %DST_DEBUG% and %DST_RELEASE%

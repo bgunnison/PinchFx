@@ -39,6 +39,37 @@ cmake --build build --config Debug
 cmake --build build --config Release
 ```
 
+Quick path:
+
+```powershell
+build.bat
+```
+
+## Deploy
+
+Use:
+
+```powershell
+deploy.bat
+```
+
+It copies the built bundles to:
+
+- `C:\ProgramData\vstplugins\DebugPinchFX.vst3`
+- `C:\ProgramData\vstplugins\PinchFX.vst3`
+
+If deployment fails, close Ableton Live first so the installed plugin bundle is not locked.
+
+## Release Zip
+
+Use:
+
+```powershell
+release.bat
+```
+
+This creates `PinchFX.vst3.zip` in the repo root from `build\VST3\Release\PinchFX.vst3`.
+
 ## Simulator
 
 The simulator project is in `sim/vsproj/` (`PinchFxSim.vcxproj` is deprecated).
